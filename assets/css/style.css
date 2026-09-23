@@ -1,0 +1,53 @@
+/* 1. Reset de Box Sizing e Margens Globais */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* 2. Configurações de Acessibilidade e Rolagem */
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%; /* Evita alterações de fonte no mobile */
+}
+
+/* 3. Ajustes de Corpo (Body) */
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  background-color: #f8f9fa; /* Exemplo de fundo claro e limpo */
+  color: #212529;            /* Exemplo de cor de texto legível */
+}
+
+/* 4. Elementos de Mídia Responsivos */
+img,
+picture,
+video,
+canvas,
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* 5. Reset de Elementos de Formulário e Tipografia */
+input,
+button,
+textarea,
+select {
+  font: inherit;
+}
+
+ol,
+ul {
+  list-style: none;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
