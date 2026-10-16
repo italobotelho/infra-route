@@ -1,0 +1,122 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 30px 15px;
+    background-color: #eef2f7;
+    color: #263449;
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 25px;
+}
+
+form {
+    background-color: white;
+    max-width: 450px;
+    margin: 0 auto;
+    padding: 25px;
+    border-radius: 16px;
+    box-shadow: 0 4px 15px #00000012;
+}
+
+label {
+    display: inline-block;
+    margin-bottom: 6px;
+    font-weight: bold;
+}
+
+input:not([type="checkbox"]),
+select {
+    width: 100%;
+    padding: 11px;
+    margin-bottom: 12px;
+    border: 1px solid #d4dce8;
+    border-radius: 10px;
+    box-sizing: border-box;
+    background-color: white;
+}
+
+input:focus,
+select:focus {
+    outline: 2px solid #8eafff;
+    border-color: #3569d4;
+}
+
+input[type="checkbox"] {
+    accent-color: #3569d4;
+}
+
+.valido {
+    border: 2px solid #27965b ;
+}
+
+.invalido {
+    border: 2px solid #d64545 ;
+}
+
+.mensagem {
+    color: #c03939;
+    font-size: 13px;
+    margin-top: 0;
+}
+
+.sucesso {
+    color: #21834c;
+    font-weight: bold;
+}
+
+.emFoco {
+    outline: 2px solid #8eafff;
+}
+
+#contador,
+#forcaSenha {
+    font-size: 13px;
+    color: #64748b;
+}
+
+#contador.limite {
+    color: #c03939;
+}
+
+button,
+input[type="submit"] {
+    background-color: #3569d4;
+    color: white;
+    border: none;
+    border-radius: 25px;
+    padding: 12px 24px;
+    cursor: pointer;
+    font-size: 15px;
+    transition: background-color 0.2s;
+}
+
+button:hover {
+    background-color: #254fa8;
+}
+input[type="submit"]:hover:not(:disabled) {
+    background-color: #254fa8;
+}
+
+button:disabled,
+input[type="submit"]:disabled {
+    background-color: #aab8d0;
+    cursor: not-allowed;
+    opacity: 0.8;
+}
+
+/* Pequenos ajustes para manter espaçamento consistente no JSX */
+#contador,
+#forcaSenha {
+    margin-top: 0;
+}
+.termos {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0 12px;
+}
+.termos label {
+    margin: 0;
+}
