@@ -1,0 +1,11 @@
+/* Customizações da tela de login do InfraRoute */ 
+body { 
+  font-family: 'Inter', system-ui, -apple-system, sans-serif; 
+} 
+input:focus {
+  outline: none; 
+} 
+/* Destaque suave no contêiner do input ativo */ 
+div:focus-within { 
+  ring: 2px; border-color: #4f46e5; 
+}
