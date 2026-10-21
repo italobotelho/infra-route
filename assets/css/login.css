@@ -1,55 +1,19 @@
-/* Customizações da tela de login do InfraRoute (login.html) */
+/* ==========================================================================
+   Customizações da Tela de Login (login.html)
+   Estrutura preparada para implementação pelo responsável de CSS
+   ========================================================================== */
 
-.login-body {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  padding: 1.5rem;
-  background-color: var(--color-bg);
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
-.login-wrapper {
-  width: 100%;
-  max-width: 400px;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
+input:focus {
+  outline: none;
 }
 
-.login-header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 0.5rem;
+/* Destaque suave no contêiner do input ativo */
+div:focus-within {
+  border-color: #4f46e5;
 }
 
-.login-header img {
-  border-radius: var(--radius-md);
-  object-fit: cover;
-}
-
-.login-header h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
-}
-
-.login-header p {
-  font-size: 0.9rem;
-  color: var(--color-text-muted);
-}
-
-.auth-box {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 1.75rem;
-  box-shadow: var(--shadow-sm);
-}
-
-.auth-box h2 {
-  font-size: 1.1rem;
-  margin-bottom: 1.25rem;
-  text-align: center;
-}
+/* Estrutura de classes da página (.login-body, .login-wrapper, .login-header, .auth-box) */

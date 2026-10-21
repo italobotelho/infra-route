@@ -1,17 +1,7 @@
-/* 1. Variáveis Globais (Design Tokens) */
+/* 1. Variáveis Globais */
 :root {
-  --color-primary: #2563eb;
-  --color-primary-hover: #1d4ed8;
-  --color-accent: #0f766e;
-  --color-accent-hover: #115e59;
-  --color-bg: #f8fafc;
-  --color-surface: #ffffff;
-  --color-border: #e2e8f0;
-  --color-text: #0f172a;
-  --color-text-muted: #475569;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --bg-default: #f8f9fa;
+  --text-default: #212529;
 }
 
 /* 2. Reset de Box Sizing e Margens Globais */
@@ -26,19 +16,17 @@
 /* 3. Configurações de Acessibilidade e Rolagem */
 html {
   scroll-behavior: smooth;
-  -webkit-text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%; /* Evita alterações de fonte no mobile */
 }
 
 /* 4. Ajustes de Corpo (Body) */
 body {
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
-  background-color: var(--color-bg);
-  color: var(--color-text);
-  display: flex;
-  flex-direction: column;
+  background-color: var(--bg-default);
+  color: var(--text-default);
 }
 
 /* 5. Elementos de Mídia Responsivos */
@@ -70,70 +58,15 @@ a {
   color: inherit;
 }
 
-/* 7. Componentes Base de Formulário e Botões */
+/* 7. Classes Utilitárias / Globais Base */
 .form-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  margin-bottom: 0.9rem;
-}
-
-.form-field label {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--color-text);
-}
-
-.form-field input,
-.form-field select,
-.project-selector select {
-  width: 100%;
-  padding: 0.55rem 0.75rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background-color: var(--color-surface);
-  color: var(--color-text);
-  font-size: 0.9rem;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.form-field input:focus,
-.form-field select:focus,
-.project-selector select:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
-}
-
-.btn-primary,
-.btn-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  padding: 0.65rem 1rem;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: #ffffff;
-  cursor: pointer;
-  transition: background-color 0.15s ease;
+  /* Estrutura global de campo de formulário */
 }
 
 .btn-primary {
-  background-color: var(--color-primary);
-}
-
-.btn-primary:hover {
-  background-color: var(--color-primary-hover);
+  /* Estilo global de botão principal */
 }
 
 .btn-action {
-  background-color: var(--color-accent);
-  margin-top: 0.75rem;
-}
-
-.btn-action:hover {
-  background-color: var(--color-accent-hover);
+  /* Estilo global de botão de ação secundária */
 }

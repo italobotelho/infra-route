@@ -1,19 +1,17 @@
-document.addEventListener("DOMContentLoaded", () => {
-  const loginForm = document.getElementById("form-login");
+document.addEventListener('DOMContentLoaded', () => {
+  const loginForm = document.getElementById('form-login');
 
   if (loginForm) {
-    loginForm.addEventListener("submit", (e) => {
+    loginForm.addEventListener('submit', (e) => {
       e.preventDefault();
 
-      const email = document.getElementById("email")?.value.trim();
-      const senha = document.getElementById("senha")?.value;
+      const email = document.getElementById('email')?.value;
+      const senha = document.getElementById('senha')?.value;
 
-      if (!email || !senha) {
-        return;
-      }
+      console.log('Dados do Login para autenticação:', { email, senha });
 
-      sessionStorage.setItem("infraroute_user", JSON.stringify({ email }));
-      window.location.href = "index.html";
+      alert(`Autenticando no InfraRoute...\nE-mail: ${email}`);
+      window.location.href = 'index.html';
     });
   }
 });
