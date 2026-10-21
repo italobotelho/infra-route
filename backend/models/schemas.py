@@ -50,6 +50,22 @@ class EnumFabricante(str, Enum):
     OUTRO = "Outro"
 
 
+class LoginRequestSchema(BaseModel):
+    email: str = Field(..., min_length=3, description="E-mail corporativo do colaborador")
+    senha: str = Field(..., min_length=1, description="Senha de acesso")
+
+
+class LoginResponseSchema(BaseModel):
+    id_usuario: int
+    nome: str
+    email: str
+    crea: Optional[str] = None
+    eh_engenheiro: bool
+    id_empresa_padrao: int
+    razao_social_empresa: str
+    nivel_acesso: EnumNivelAcesso
+
+
 class TipoEquipamentoSchema(BaseModel):
     id_tipo_equipamento: int = Field(..., gt=0, description="PK de Tipo_Equipamento")
     categoria: EnumCategoriaEquip = Field(..., description="ENUM enum_categoria_equip do SGBD")
@@ -73,6 +89,11 @@ class TipoCaboSchema(BaseModel):
         if not v or not v.strip():
             raise ValueError("Descricao_Modelo não pode estar em branco.")
         return v.strip()
+
+
+class CatalogosResponseSchema(BaseModel):
+    catalogo_equipamentos: List[TipoEquipamentoSchema]
+    catalogo_cabos: List[TipoCaboSchema]
 
 
 class PontoRedeSchema(BaseModel):
@@ -109,6 +130,27 @@ class PontoRedeSchema(BaseModel):
         if not math.isfinite(v):
             raise ValueError("O valor numérico deve ser finito.")
         return v
+
+
+class CriarPontoRedeRequestSchema(BaseModel):
+    descricao: str = Field(..., min_length=1, description="Descrição do ativo (ex: Poste Concreto #104)")
+    latitude: float = Field(..., ge=-90, le=90, description="Latitude WGS 84")
+    longitude: float = Field(..., ge=-180, le=180, description="Longitude WGS 84")
+    status_fisico: EnumStatusFisico = Field(default=EnumStatusFisico.PROJETADO)
+    id_tipo_equipamento: Optional[int] = Field(default=None, gt=0)
+    id_usuario_autor: int = Field(default=1, gt=0)
+
+
+class SoftDeletePontoRequestSchema(BaseModel):
+    novo_status_ponto: EnumStatusPonto = Field(
+        default=EnumStatusPonto.REMOVIDO,
+        description="Novo status lógico na tabela associativa Contem ('Removido' ou 'Inativo')",
+    )
+    forcar_recalculo_mst: bool = Field(
+        default=False,
+        description="Se True, recalcula automaticamente a MST caso o ponto ancore trechos ativos",
+    )
+    id_usuario_autor: int = Field(default=1, gt=0)
 
 
 class CoordenadaLatLngSchema(BaseModel):
@@ -162,6 +204,28 @@ class TrechoRedeMSTSchema(BaseModel):
         default_factory=list,
         description="Array de {lat, lng} pronto para `new google.maps.Polyline({ path })`",
     )
+
+
+class CriarProjetoRequestSchema(BaseModel):
+    nome: str = Field(..., min_length=1, description="Nome do projeto de expansão óptica")
+    id_empresa: int = Field(default=1, gt=0)
+    id_engenheiro: int = Field(default=1, gt=0)
+    id_usuario_autor: int = Field(default=1, gt=0)
+
+
+class ProjetoResumoSchema(BaseModel):
+    id_projeto: int
+    nome: str
+    status: EnumStatusProjeto
+    metragem_total: float
+    custo_estimado: float
+    id_empresa: int
+    id_engenheiro: int
+
+
+class ProjetoDetalhadoSchema(ProjetoResumoSchema):
+    pontos: List[PontoRedeSchema]
+    trechos: List[TrechoRedeMSTSchema]
 
 
 class RequisicaoCalculoMSTSchema(BaseModel):

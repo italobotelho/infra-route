@@ -6,6 +6,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from backend.controllers.auth_controller import router as auth_router
+from backend.controllers.projetos_controller import router as projetos_router
 from backend.controllers.topologia_controller import router as topologia_router
 from backend.services.exceptions import InfraRouteError
 
@@ -42,6 +44,8 @@ async def infraroute_domain_exception_handler(
     )
 
 
+app.include_router(auth_router)
+app.include_router(projetos_router)
 app.include_router(topologia_router)
 
 
