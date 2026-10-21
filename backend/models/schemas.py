@@ -34,10 +34,26 @@ class EnumNivelAcesso(str, Enum):
     VISUALIZADOR = "Visualizador"
 
 
+class EnumCategoriaEquip(str, Enum):
+    CAIXA_DE_EMENDA = "Caixa de Emenda"
+    CTO = "CTO"
+    SWITCH = "Switch"
+    PASSIVO_DE_PASSAGEM = "Passivo de Passagem"
+    OUTRO = "Outro"
+
+
+class EnumFabricante(str, Enum):
+    FURUKAWA = "Furukawa"
+    INTELBRAS = "Intelbras"
+    HUAWEI = "Huawei"
+    CISCO = "Cisco"
+    OUTRO = "Outro"
+
+
 class TipoEquipamentoSchema(BaseModel):
     id_tipo_equipamento: int = Field(..., gt=0, description="PK de Tipo_Equipamento")
-    categoria: str = Field(..., min_length=1, description="Ex: CTO, Caixa de Emenda, Switch")
-    fabricante: str = Field(..., min_length=1, description="Ex: Furukawa, Huawei, Intelbras, Cisco")
+    categoria: EnumCategoriaEquip = Field(..., description="ENUM enum_categoria_equip do SGBD")
+    fabricante: EnumFabricante = Field(..., description="ENUM enum_fabricante do SGBD")
     custo_unitario: float = Field(..., ge=0, description="Custo unitário do hardware (>= 0)")
 
 
@@ -170,6 +186,10 @@ class RequisicaoCalculoMSTSchema(BaseModel):
             ),
         ],
         description="Catálogo Tipo_Cabo para validação de Limite_Distancia_Metros e tarifação",
+    )
+    catalogo_equipamentos: Optional[List[TipoEquipamentoSchema]] = Field(
+        default=None,
+        description="Catálogo opcional 3FN Tipo_Equipamento para tarifação e validação de FK",
     )
     arestas_candidatas: Optional[List[ArestaCandidataSchema]] = Field(
         default=None,

@@ -10,12 +10,15 @@ import unittest
 
 from backend.services.prim_service import (
     ArestaCandidata,
+    CategoriaEquipamento,
     CoordenadaLatLng,
+    FabricanteEquipamento,
     GrafoTopologicoOptico,
     PontoRede,
     StatusFisicoPonto,
     StatusPontoProjeto,
     TipoCabo,
+    TipoEquipamento,
     calcular_distancia_haversine,
 )
 
@@ -519,6 +522,81 @@ class TestPrimServiceRobustez(unittest.TestCase):
         self.assertAlmostEqual(trecho.caminho_coordenadas[0]["lat"], -22.9000)
         self.assertAlmostEqual(trecho.caminho_coordenadas[1]["lat"], -22.9015)
         self.assertAlmostEqual(trecho.caminho_coordenadas[2]["lat"], -22.9020)
+
+    def test_17_isolamento_catalogo_3fn_tipo_equipamento_e_enums_fechados(self) -> None:
+        """
+        Seção 0.2.3 (3FN - Isolamento de Catálogos) e Seção 1 do Modelo Físico (ENUMs):
+        - Valida que o custo unitário vem estritamente da tabela catálogo `Tipo_Equipamento`.
+        - Rejeita FK `idTipo_Equipamento` inexistente no catálogo.
+        - Rejeita valores fora dos ENUMs fechados do PostgreSQL.
+        """
+        catalogo_eq = [
+            TipoEquipamento(
+                id_tipo_equipamento=1,
+                categoria=CategoriaEquipamento.CTO.value,
+                fabricante=FabricanteEquipamento.FURUKAWA.value,
+                custo_unitario=380.00,
+            ),
+            TipoEquipamento(
+                id_tipo_equipamento=3,
+                categoria=CategoriaEquipamento.SWITCH.value,
+                fabricante=FabricanteEquipamento.HUAWEI.value,
+                custo_unitario=2450.00,
+            ),
+        ]
+        pontos = [
+            PontoRede(1, "POP", -22.700, -46.980, id_tipo_equipamento=3),
+            PontoRede(2, "Poste CTO", -22.701, -46.980, id_tipo_equipamento=1),
+        ]
+
+        grafo = GrafoTopologicoOptico(1, pontos, self.catalogo_padrao, catalogo_equipamentos=catalogo_eq)
+        grafo.construir_lista_adjacencia()
+        res = grafo.extrair_mst_prim()
+        self.assertAlmostEqual(res.custo_total_equipamentos, 2450.00 + 380.00, places=2)
+
+        # FK id_tipo_equipamento=99 não existe no catálogo -> deve lançar erro de integridade
+        with self.assertRaises(ValueError):
+            GrafoTopologicoOptico(
+                1,
+                [PontoRede(1, "Poste FK Inválida", -22.700, -46.980, id_tipo_equipamento=99)],
+                self.catalogo_padrao,
+                catalogo_equipamentos=catalogo_eq,
+            )
+
+        # Valores fora do domínio fechado dos ENUMs -> devem ser bloqueados
+        with self.assertRaises(ValueError):
+            PontoRede(1, "Status Inválido", -22.700, -46.980, status_fisico="Quebrado")
+
+        with self.assertRaises(ValueError):
+            PontoRede(1, "Status Ponto Inválido", -22.700, -46.980, status_ponto="Deletado")
+
+        with self.assertRaises(ValueError):
+            TipoEquipamento(1, categoria="Roteador Caseiro", fabricante="Furukawa", custo_unitario=100.0)
+
+    def test_18_calculo_automatico_distancia_acumulada_polilinha_google_maps(self) -> None:
+        """
+        Garante que quando uma aresta traz uma polilinha viária (`caminho_coordenadas`)
+        do Google Maps sem informar `distancia_metros`, o motor calcula automaticamente
+        a soma geodésica dos segmentos da rua (que é maior que a linha reta euclidiana).
+        """
+        p1 = PontoRede(1, "Poste A", -22.7000, -46.9800)
+        p2 = PontoRede(2, "Poste B", -22.7020, -46.9820)
+        dist_reta = calcular_distancia_haversine(p1.latitude, p1.longitude, p2.latitude, p2.longitude)
+
+        # Caminho contornando quarteirão em "L" (A -> esquina -> B)
+        rota_quarteirao = (
+            CoordenadaLatLng(lat=-22.7000, lng=-46.9800),
+            CoordenadaLatLng(lat=-22.7000, lng=-46.9820),
+            CoordenadaLatLng(lat=-22.7020, lng=-46.9820),
+        )
+        grafo = GrafoTopologicoOptico(1, [p1, p2], self.catalogo_padrao)
+        grafo.construir_lista_adjacencia(
+            [ArestaCandidata(origem_id=1, destino_id=2, distancia_metros=None, caminho_coordenadas=rota_quarteirao)]
+        )
+        res = grafo.extrair_mst_prim()
+
+        self.assertTrue(res.grafo_conexo)
+        self.assertGreater(res.metragem_total, dist_reta)
 
 
 if __name__ == "__main__":

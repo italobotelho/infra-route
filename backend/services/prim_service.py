@@ -1,15 +1,14 @@
 """
 Motor de Processamento Topológico e Algoritmo de Prim (Árvore Geradora Mínima - MST).
 
-Implementa as diretrizes arquiteturais documentadas em `docs/`:
+Implementa as diretrizes arquiteturais documentadas em `docs/` e `database/schema_postgis.sql`:
 1. Modelagem em memória por Lista de Adjacência (`Dict[int, List[Adjacencia]]`).
 2. Abstração da direcionalidade (Origem/Destino -> Grafo Não Direcionado Bidirecional)
    com preservação da orientação paramétrica do vetor viário (`Geometria_Linha`).
 3. Resolução da Dependência Triangular e filtro de Soft Delete (`Status_Ponto == 'Ativo'`).
-4. Trava Topológica Anti-Loop (`Origem_ID <> Destino_ID`).
+4. Trava Topológica Anti-Loop (`Origem_ID <> Destino_ID`) e validação física geodésica.
 5. Árvore Geradora Mínima Constrita (`Limite_Distancia_Metros` de `Tipo_Cabo`).
-6. Pré-filtro espacial por Bounding Box (inspirado no índice GIST) e suporte direto
-   a coordenadas e polilinhas reais vindas da API do Google Maps (`{lat, lng}`).
+6. Isolamento de Catálogos em 3FN (`Tipo_Equipamento` e `Tipo_Cabo`).
 7. Memoização de `Metragem_Total` e `Custo_Estimado` para a entidade `Projeto`.
 """
 
@@ -35,6 +34,28 @@ class StatusPontoProjeto(str, Enum):
     REMOVIDO = "Removido"
 
 
+class CategoriaEquipamento(str, Enum):
+    CAIXA_DE_EMENDA = "Caixa de Emenda"
+    CTO = "CTO"
+    SWITCH = "Switch"
+    PASSIVO_DE_PASSAGEM = "Passivo de Passagem"
+    OUTRO = "Outro"
+
+
+class FabricanteEquipamento(str, Enum):
+    FURUKAWA = "Furukawa"
+    INTELBRAS = "Intelbras"
+    HUAWEI = "Huawei"
+    CISCO = "Cisco"
+    OUTRO = "Outro"
+
+
+_VALORES_STATUS_FISICO = {e.value for e in StatusFisicoPonto}
+_VALORES_STATUS_PONTO = {e.value for e in StatusPontoProjeto}
+_VALORES_CATEGORIA_EQUIP = {e.value for e in CategoriaEquipamento}
+_VALORES_FABRICANTE = {e.value for e in FabricanteEquipamento}
+
+
 @dataclass(frozen=True)
 class CoordenadaLatLng:
     """Coordenada geográfica compatível com `google.maps.LatLngLiteral` ({lat, lng})."""
@@ -52,7 +73,37 @@ class CoordenadaLatLng:
 
 
 @dataclass(frozen=True)
+class TipoEquipamento:
+    """Catálogo 3FN de especificações de hardware (Seção 2.9 da Documentação)."""
+
+    id_tipo_equipamento: int
+    categoria: str
+    fabricante: str
+    custo_unitario: float
+
+    def __post_init__(self) -> None:
+        if self.id_tipo_equipamento <= 0:
+            raise ValidacaoDominioError("ID_Tipo_Equipamento deve ser um inteiro positivo.")
+        cat_val = self.categoria.value if isinstance(self.categoria, Enum) else str(self.categoria)
+        fab_val = (
+            self.fabricante.value if isinstance(self.fabricante, Enum) else str(self.fabricante)
+        )
+        if cat_val not in _VALORES_CATEGORIA_EQUIP:
+            raise ValidacaoDominioError(
+                f"Categoria de equipamento inválida ('{cat_val}'). Valores permitidos: {sorted(_VALORES_CATEGORIA_EQUIP)}"
+            )
+        if fab_val not in _VALORES_FABRICANTE:
+            raise ValidacaoDominioError(
+                f"Fabricante inválido ('{fab_val}'). Valores permitidos: {sorted(_VALORES_FABRICANTE)}"
+            )
+        if not math.isfinite(self.custo_unitario) or self.custo_unitario < 0:
+            raise ValidacaoDominioError("Custo_Unitario deve ser um número finito >= 0.")
+
+
+@dataclass(frozen=True)
 class TipoCabo:
+    """Catálogo 3FN de cabos ópticos (Seção 2.10 da Documentação)."""
+
     id_cabo: int
     descricao_modelo: str
     custo_por_metro: float
@@ -89,6 +140,30 @@ class PontoRede:
             raise ValidacaoDominioError(f"Latitude inválida para SRID 4326: {self.latitude}")
         if not math.isfinite(self.longitude) or not (-180.0 <= self.longitude <= 180.0):
             raise ValidacaoDominioError(f"Longitude inválida para SRID 4326: {self.longitude}")
+
+        sf_val = (
+            self.status_fisico.value
+            if isinstance(self.status_fisico, Enum)
+            else str(self.status_fisico)
+        )
+        if sf_val not in _VALORES_STATUS_FISICO:
+            raise ValidacaoDominioError(
+                f"Status_Fisico inválido ('{sf_val}'). Valores permitidos: {sorted(_VALORES_STATUS_FISICO)}"
+            )
+
+        sp_val = (
+            self.status_ponto.value
+            if isinstance(self.status_ponto, Enum)
+            else str(self.status_ponto)
+        )
+        if sp_val not in _VALORES_STATUS_PONTO:
+            raise ValidacaoDominioError(
+                f"Status_Ponto inválido ('{sp_val}'). Valores permitidos: {sorted(_VALORES_STATUS_PONTO)}"
+            )
+
+        if self.id_tipo_equipamento is not None and self.id_tipo_equipamento <= 0:
+            raise ValidacaoDominioError("idTipo_Equipamento deve ser um inteiro positivo ou None.")
+
         if not math.isfinite(self.custo_equipamento) or self.custo_equipamento < 0:
             raise ValidacaoDominioError("Custo de equipamento não pode ser negativo ou não-finito.")
 
@@ -174,11 +249,25 @@ def calcular_distancia_haversine(
     c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
     distancia_bruta = raio_terra_metros * c
 
-    # Garante piso de 0.01m para coordenadas distintas (compatível com NUMERIC(15,2) CHECK > 0)
     if 0.0 < distancia_bruta < 0.01:
         return 0.01
 
     return round(distancia_bruta, 2)
+
+
+def calcular_distancia_polilinha(vertices: Sequence[CoordenadaLatLng]) -> float:
+    """
+    Calcula o comprimento acumulado em metros ao longo de uma polilinha viária
+    composta por múltiplos vértices `{lat, lng}` do Google Maps.
+    """
+    if len(vertices) < 2:
+        return 0.0
+    total = 0.0
+    for i in range(len(vertices) - 1):
+        total += calcular_distancia_haversine(
+            vertices[i].lat, vertices[i].lng, vertices[i + 1].lat, vertices[i + 1].lng
+        )
+    return round(total, 2)
 
 
 def gerar_linestring_wkt(
@@ -188,9 +277,6 @@ def gerar_linestring_wkt(
 ) -> str:
     """
     Gera a representação geométrica WKT (LineString, SRID 4326) no padrão PostGIS (Longitude Latitude).
-    - Formata com 8 casas decimais fixas (`:.8f`) para evitar notação científica (`1e-07`)
-      próxima ao Equador/Meridiano de Greenwich, que quebraria o parser WKT do PostGIS.
-    - Suporta polilinhas com múltiplos vértices intermediários vindos do Google Maps Directions API.
     """
     if caminho_coordenadas and len(caminho_coordenadas) >= 2:
         vertices_str = ", ".join(f"{c.lng:.8f} {c.lat:.8f}" for c in caminho_coordenadas)
@@ -208,12 +294,14 @@ class GrafoTopologicoOptico:
     """
 
     DISTANCIA_MINIMA_JUMPER_METROS: float = 0.01
+    TOLERANCIA_GEODESICA_MINIMA: float = 0.95
 
     def __init__(
         self,
         id_projeto: int,
         pontos: Sequence[PontoRede],
         catalogo_cabos: Sequence[TipoCabo],
+        catalogo_equipamentos: Optional[Sequence[TipoEquipamento]] = None,
     ) -> None:
         if id_projeto <= 0:
             raise ValidacaoDominioError("ID_Projeto deve ser um inteiro positivo.")
@@ -233,6 +321,17 @@ class GrafoTopologicoOptico:
             c.limite_distancia_metros for c in self.catalogo_cabos.values()
         )
 
+        # Catálogo opcional de equipamentos em 3FN (Seção 0.2.3 e 2.9)
+        self.catalogo_equipamentos: Optional[Dict[int, TipoEquipamento]] = None
+        if catalogo_equipamentos is not None:
+            self.catalogo_equipamentos = {}
+            for eq in catalogo_equipamentos:
+                if eq.id_tipo_equipamento in self.catalogo_equipamentos:
+                    raise ValidacaoDominioError(
+                        f"ID_Tipo_Equipamento duplicado no catálogo: {eq.id_tipo_equipamento}"
+                    )
+                self.catalogo_equipamentos[eq.id_tipo_equipamento] = eq
+
         # Valida unicidade de ID_Ponto na entrada e filtra apenas nós ativos (Seções 3.1 e 3.3)
         ids_vistos: Set[int] = set()
         self.nos_ativos: Dict[int, PontoRede] = {}
@@ -241,6 +340,17 @@ class GrafoTopologicoOptico:
             if p.id_ponto in ids_vistos:
                 raise ValidacaoDominioError(f"ID_Ponto duplicado na lista de entrada: {p.id_ponto}")
             ids_vistos.add(p.id_ponto)
+
+            # Se o catálogo 3FN de Tipo_Equipamento foi fornecido, valida FK mesmo antes de filtrar
+            if (
+                self.catalogo_equipamentos is not None
+                and p.id_tipo_equipamento is not None
+                and p.id_tipo_equipamento not in self.catalogo_equipamentos
+            ):
+                raise ValidacaoDominioError(
+                    f"Ponto {p.id_ponto} referencia idTipo_Equipamento={p.id_tipo_equipamento} "
+                    f"inexistente no catálogo Tipo_Equipamento."
+                )
 
             status_ponto_val = (
                 p.status_ponto.value if isinstance(p.status_ponto, Enum) else str(p.status_ponto)
@@ -262,13 +372,24 @@ class GrafoTopologicoOptico:
             id_ponto: [] for id_ponto in self.nos_ativos
         }
 
+    def _obter_custo_equipamento_no(self, ponto: PontoRede) -> float:
+        """
+        Seção 0.2.3 (3FN - Isolamento de Catálogos) e Seção 2.6 (Cardinalidade 0,1):
+        - Se `id_tipo_equipamento` é None (passagem mecânica), o custo é estritamente 0.0.
+        - Se `catalogo_equipamentos` está carregado, obtém `Custo_Unitario` diretamente do catálogo.
+        """
+        if ponto.id_tipo_equipamento is None:
+            return 0.0
+        if self.catalogo_equipamentos is not None:
+            return self.catalogo_equipamentos[ponto.id_tipo_equipamento].custo_unitario
+        return ponto.custo_equipamento
+
     def _selecionar_cabo_compativel(
         self, distancia_metros: float, id_tipo_cabo_preferencial: Optional[int] = None
     ) -> Optional[TipoCabo]:
         """
         Seção 2.10 da Documentação (Árvore Geradora Mínima Constrita):
         Verifica se a distância do vão respeita `Limite_Distancia_Metros` do Tipo_Cabo.
-        Bloqueia conexões cujo vão livre exceda a resistência mecânica/tração do cabo.
         """
         if id_tipo_cabo_preferencial is not None:
             cabo = self.catalogo_cabos.get(id_tipo_cabo_preferencial)
@@ -290,10 +411,6 @@ class GrafoTopologicoOptico:
         )
 
     def _inserir_ou_atualizar_vizinho(self, adj_nova: Adjacencia) -> None:
-        """
-        Insere a adjacência na lista do nó `origem_id`. Caso já exista uma aresta paralela
-        para o mesmo `destino_id`, mantém apenas a de menor distância/custo.
-        """
         adjacencias = self.lista_adjacencia[adj_nova.origem_id]
         for idx, adj_existente in enumerate(adjacencias):
             if adj_existente.destino_id == adj_nova.destino_id:
@@ -335,21 +452,26 @@ class GrafoTopologicoOptico:
         ponto_u = self.nos_ativos[origem_id]
         ponto_v = self.nos_ativos[destino_id]
 
+        dist_geodesica = calcular_distancia_haversine(
+            ponto_u.latitude, ponto_u.longitude, ponto_v.latitude, ponto_v.longitude
+        )
+
         # 3. Cálculo ou validação da distância física (> 0 e finita)
         if distancia_metros is not None:
             if not math.isfinite(distancia_metros) or distancia_metros <= 0:
                 return False
             dist = max(self.DISTANCIA_MINIMA_JUMPER_METROS, round(float(distancia_metros), 2))
-        else:
-            dist_haversine = calcular_distancia_haversine(
-                ponto_u.latitude, ponto_u.longitude, ponto_v.latitude, ponto_v.longitude
-            )
-            # Se dois ativos distintos (ex: CEO e CTO no mesmo poste/caixa ou clique duplo no mapa)
-            # compartilham a mesma coordenada GPS, adota o vão mínimo de manobra (0.01m)
-            # para respeitar CHECK (Distancia_Metros > 0) sem desconectar a topologia.
+        elif caminho_coordenadas and len(caminho_coordenadas) >= 2:
+            dist_polilinha = calcular_distancia_polilinha(caminho_coordenadas)
             dist = (
-                dist_haversine
-                if dist_haversine > 0.0
+                dist_polilinha
+                if dist_polilinha > 0.0
+                else self.DISTANCIA_MINIMA_JUMPER_METROS
+            )
+        else:
+            dist = (
+                dist_geodesica
+                if dist_geodesica > 0.0
                 else self.DISTANCIA_MINIMA_JUMPER_METROS
             )
 
@@ -398,11 +520,6 @@ class GrafoTopologicoOptico:
     def construir_lista_adjacencia(
         self, arestas_candidatas: Optional[Sequence[ArestaCandidata]] = None
     ) -> None:
-        """
-        Popula a Lista de Adjacência a partir de arestas candidatas explícitas ou,
-        quando não informadas, calcula os vãos viáveis entre os pontos ativos do projeto
-        utilizando pré-filtro de Bounding Box espacial.
-        """
         if arestas_candidatas is not None:
             for aresta in arestas_candidatas:
                 self.adicionar_aresta_bidirecional(
@@ -416,14 +533,12 @@ class GrafoTopologicoOptico:
 
         ids_nos = sorted(self.nos_ativos.keys())
         total_nos = len(ids_nos)
-        # 1 grau de latitude equivale a ~110.574 km (margem segura de 110.000m)
         delta_lat_max_graus = (self.maior_limite_cabo_metros / 110000.0) * 1.05
 
         for i in range(total_nos):
             u = self.nos_ativos[ids_nos[i]]
             for j in range(i + 1, total_nos):
                 v = self.nos_ativos[ids_nos[j]]
-                # Pré-filtro rápido por Bounding Box Latitudinal (evita trigonometria desnecessária)
                 if abs(u.latitude - v.latitude) > delta_lat_max_graus:
                     continue
                 self.adicionar_aresta_bidirecional(ids_nos[i], ids_nos[j])
@@ -431,12 +546,6 @@ class GrafoTopologicoOptico:
     def extrair_mst_prim(
         self, no_inicial_id: Optional[int] = None
     ) -> ResultadoMSTProjeto:
-        """
-        Executa o Algoritmo de Prim utilizando Fila de Prioridade (Min-Heap) sobre a
-        Lista de Adjacência em memória para extrair a Árvore Geradora Mínima (MST / AGM).
-
-        Complexidade: O(E log V), onde V = |Ponto_Rede ativos| e E = |Adjacências válidas|.
-        """
         if not self.nos_ativos:
             if no_inicial_id is not None:
                 raise ValidacaoDominioError(
@@ -543,9 +652,9 @@ class GrafoTopologicoOptico:
         custo_total_cabos = round(sum(t.custo_trecho for t in trechos_mst), 2)
         custo_total_equipamentos = round(
             sum(
-                p.custo_equipamento
+                self._obter_custo_equipamento_no(p)
                 for id_no, p in self.nos_ativos.items()
-                if id_no in visitados and p.id_tipo_equipamento is not None
+                if id_no in visitados
             ),
             2,
         )

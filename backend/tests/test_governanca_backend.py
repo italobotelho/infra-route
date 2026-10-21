@@ -23,11 +23,13 @@ from backend.services.governanca_service import (
     GovernancaMultiTenantService,
     NivelAcessoRBAC,
     ProjetoDominio,
+    StatusProjetoEnum,
     Usuario,
     VinculoCorporate,
 )
 from backend.services.prim_service import (
     PontoRede,
+    ResultadoMSTProjeto,
     StatusPontoProjeto,
     TrechoRedeMST,
 )
@@ -280,6 +282,48 @@ class TestGovernancaBackendRobustez(unittest.TestCase):
         # Validação de esquema de conexão em database.py
         with self.assertRaises(ValueError):
             inicializar_engine("mysql://usuario:senha@localhost/db_incompativel")
+
+    def test_08_memoizacao_projeto_e_imutabilidade_projetos_concluidos_cancelados(self) -> None:
+        """
+        Seção 2.5 (Memoização O(1)) e Seção 3.3 (Imutabilidade Histórica):
+        - Atualiza `Metragem_Total` e `Custo_Estimado` quando o projeto está 'Em Planejamento'.
+        - Bloqueia (HTTP 409) qualquer tentativa de recalcular ou remover pontos de um
+          projeto já 'Concluído' ou 'Cancelado'.
+        """
+        projeto_ativo = ProjetoDominio(1, "Expansão Industrial", id_empresa=1, id_engenheiro=10)
+        resultado_mst = ResultadoMSTProjeto(
+            id_projeto=1,
+            nos_ativos_processados=3,
+            grafo_conexo=True,
+            metragem_total=450.75,
+            custo_estimado=5408.38,
+            custo_total_cabos=2028.38,
+            custo_total_equipamentos=3380.00,
+        )
+
+        projeto_atualizado = self.governanca.atualizar_memoizacao_projeto(
+            id_usuario_autor=10,
+            projeto=projeto_ativo,
+            resultado_mst=resultado_mst,
+        )
+        self.assertEqual(projeto_atualizado.metragem_total, 450.75)
+        self.assertEqual(projeto_atualizado.custo_estimado, 5408.38)
+
+        # Projeto Concluído não pode sofrer mutação retroativa
+        projeto_concluido = ProjetoDominio(
+            2,
+            "Malha Histórica 2025",
+            id_empresa=1,
+            id_engenheiro=10,
+            status=StatusProjetoEnum.CONCLUIDO,
+        )
+        with self.assertRaises(ViolacaoIntegridadeTopologicaError) as ctx:
+            self.governanca.atualizar_memoizacao_projeto(
+                id_usuario_autor=10,
+                projeto=projeto_concluido,
+                resultado_mst=resultado_mst,
+            )
+        self.assertEqual(ctx.exception.codigo_http, 409)
 
 
 if __name__ == "__main__":

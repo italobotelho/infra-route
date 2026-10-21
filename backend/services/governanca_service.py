@@ -7,13 +7,16 @@ Implementa as resoluções arquiteturais documentadas em `docs/`:
    `Empresa` <-> `Projeto` <-> `Engenheiro` via tabela associativa `Vincula`.
 3. Controle de Acesso Baseado em Papéis (RBAC):
    `Administrador`, `Projetista` e `Visualizador`.
-4. Governança de Exclusão Lógica (Soft Delete) e Proteção de Órfãos (ON DELETE RESTRICT).
+4. Governança de Exclusão Lógica (Soft Delete), Proteção de Órfãos (ON DELETE RESTRICT)
+   e Imutabilidade de Projetos Concluídos/Cancelados.
+5. Memoização de `Metragem_Total` e `Custo_Estimado` na entidade `Projeto` (O(1)).
 """
 
 from dataclasses import dataclass, replace
 from enum import Enum
+import math
 import re
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Dict, Optional, Sequence, Set, Tuple
 
 from backend.services.exceptions import (
     PermissaoInsuficienteError,
@@ -25,7 +28,7 @@ from backend.services.exceptions import (
 )
 from backend.services.prim_service import (
     PontoRede,
-    StatusFisicoPonto,
+    ResultadoMSTProjeto,
     StatusPontoProjeto,
     TrechoRedeMST,
 )
@@ -42,6 +45,10 @@ class StatusProjetoEnum(str, Enum):
     EM_EXECUCAO = "Em Execução"
     CONCLUIDO = "Concluído"
     CANCELADO = "Cancelado"
+
+
+_VALORES_NIVEL_ACESSO = {e.value for e in NivelAcessoRBAC}
+_VALORES_STATUS_PROJETO = {e.value for e in StatusProjetoEnum}
 
 
 @dataclass(frozen=True)
@@ -77,6 +84,8 @@ class Usuario:
         cpf_limpo = re.sub(r"\D", "", self.cpf or "")
         if len(cpf_limpo) != 11 or len(set(cpf_limpo)) == 1:
             raise ValidacaoDominioError(f"CPF inválido: {self.cpf}")
+        if not (self.telefone and self.telefone.strip()):
+            raise ValidacaoDominioError("Telefone do usuário não pode ser vazio.")
         if not (self.email and "@" in self.email and "." in self.email.split("@")[-1]):
             raise ValidacaoDominioError(f"E-mail inválido: {self.email}")
         if self.crea is not None and not self.crea.strip():
@@ -96,6 +105,17 @@ class VinculoCorporate:
     id_empresa: int
     nivel_acesso: NivelAcessoRBAC
 
+    def __post_init__(self) -> None:
+        if self.id_usuario <= 0 or self.id_empresa <= 0:
+            raise ValidacaoDominioError("ID_Usuario e ID_Empresa devem ser inteiros positivos.")
+        na_val = (
+            self.nivel_acesso.value
+            if isinstance(self.nivel_acesso, Enum)
+            else str(self.nivel_acesso)
+        )
+        if na_val not in _VALORES_NIVEL_ACESSO:
+            raise ValidacaoDominioError(f"Nivel_Acesso inválido: {na_val}")
+
 
 @dataclass(frozen=True)
 class ProjetoDominio:
@@ -114,19 +134,34 @@ class ProjetoDominio:
             raise ValidacaoDominioError("Nome do projeto não pode ser vazio.")
         if self.id_empresa <= 0 or self.id_engenheiro <= 0:
             raise ValidacaoDominioError("idEmpresa e idEngenheiro devem ser inteiros positivos.")
-        if self.custo_estimado < 0 or self.metragem_total < 0:
-            raise ValidacaoDominioError("Custo_Estimado e Metragem_Total não podem ser negativos.")
+        st_val = self.status.value if isinstance(self.status, Enum) else str(self.status)
+        if st_val not in _VALORES_STATUS_PROJETO:
+            raise ValidacaoDominioError(f"Status de projeto inválido: {st_val}")
+        if (
+            not math.isfinite(self.custo_estimado)
+            or not math.isfinite(self.metragem_total)
+            or self.custo_estimado < 0
+            or self.metragem_total < 0
+        ):
+            raise ValidacaoDominioError(
+                "Custo_Estimado e Metragem_Total devem ser números finitos >= 0."
+            )
 
 
 class GovernancaMultiTenantService:
     """
     Serviço responsável por blindar as regras de negócio de isolamento Multi-tenant,
-    RBAC, especialização técnica (Engenheiro/CREA) e governança histórica (Soft Delete).
+    RBAC, especialização técnica (Engenheiro/CREA), governança histórica (Soft Delete)
+    e atualização memoizada de Projetos.
     """
 
     PAPEIS_ESCRITA: Set[NivelAcessoRBAC] = {
         NivelAcessoRBAC.ADMINISTRADOR,
         NivelAcessoRBAC.PROJETISTA,
+    }
+    STATUS_PROJETO_IMUTAVEIS: Set[str] = {
+        StatusProjetoEnum.CONCLUIDO.value,
+        StatusProjetoEnum.CANCELADO.value,
     }
 
     def __init__(
@@ -170,7 +205,6 @@ class GovernancaMultiTenantService:
             cpfs_vistos.add(cpf_num)
             emails_vistos.add(email_norm)
 
-        # Chave composta (id_usuario, id_empresa) -> VinculoCorporate
         self.vinculos: Dict[Tuple[int, int], VinculoCorporate] = {}
         for vinc in vinculos:
             if vinc.id_usuario not in self.usuarios:
@@ -215,6 +249,20 @@ class GovernancaMultiTenantService:
 
         return vinculo
 
+    def _verificar_projeto_editavel(self, projeto: ProjetoDominio) -> None:
+        """
+        Seção 3.3 da Documentação (Persistência Histórica e Auditabilidade):
+        Projetos 'Concluído' ou 'Cancelado' têm seu histórico e custo congelados.
+        """
+        status_val = (
+            projeto.status.value if isinstance(projeto.status, Enum) else str(projeto.status)
+        )
+        if status_val in self.STATUS_PROJETO_IMUTAVEIS:
+            raise ViolacaoIntegridadeTopologicaError(
+                f"Projeto {projeto.id_projeto} encontra-se '{status_val}' e está congelado "
+                f"para auditoria histórica, não permitindo mutações topológicas."
+            )
+
     def validar_criacao_projeto(
         self,
         id_usuario_autor: int,
@@ -222,21 +270,15 @@ class GovernancaMultiTenantService:
     ) -> ProjetoDominio:
         """
         Seção 3.4 da Documentação (Resolução da Dependência Triangular de Permissionamento):
-        Garante que:
-        1. O autor da requisição possui vínculo com `projeto.id_empresa` e permissão de escrita.
-        2. O `id_engenheiro` indicado possui a especialização `Engenheiro` (CREA válido).
-        3. O próprio `id_engenheiro` possui vínculo contratual vigente com `projeto.id_empresa`
-           e papel compatível (`Administrador` ou `Projetista`), impedindo que um engenheiro
-           da Empresa B assine um projeto da Empresa A.
+        Garante que o autor e o engenheiro responsável possuem vínculo ativo com a empresa
+        detentora do projeto e que o engenheiro possui CREA válido.
         """
-        # 1. Valida permissão do autor da operação na empresa dona do projeto
         self.validar_acesso_tenant(
             id_usuario=id_usuario_autor,
             id_empresa=projeto.id_empresa,
             exigir_escrita=True,
         )
 
-        # 2. Valida existência e especialização (p, d) do Engenheiro responsável
         engenheiro = self.usuarios.get(projeto.id_engenheiro)
         if engenheiro is None:
             raise RecursoNaoEncontradoError(
@@ -248,7 +290,6 @@ class GovernancaMultiTenantService:
                 f"especialização técnica de Engenheiro (CREA ausente)."
             )
 
-        # 3. Valida que o Engenheiro responsável também pertence à mesma Empresa (Triângulo 3.4)
         vinculo_eng = self.vinculos.get((engenheiro.id_usuario, projeto.id_empresa))
         if vinculo_eng is None:
             raise ViolacaoMultiTenantError(
@@ -263,6 +304,36 @@ class GovernancaMultiTenantService:
 
         return projeto
 
+    def atualizar_memoizacao_projeto(
+        self,
+        id_usuario_autor: int,
+        projeto: ProjetoDominio,
+        resultado_mst: ResultadoMSTProjeto,
+    ) -> ProjetoDominio:
+        """
+        Seção 2.5 e 0.2.3 da Documentação (Memoização de Metragem_Total e Custo_Estimado):
+        Consolida na entidade `Projeto` os indicadores calculados pelo Algoritmo de Prim,
+        garantindo isolamento Multi-tenant, RBAC e proteção de projetos concluídos/cancelados.
+        """
+        self.validar_acesso_tenant(
+            id_usuario=id_usuario_autor,
+            id_empresa=projeto.id_empresa,
+            exigir_escrita=True,
+        )
+        self._verificar_projeto_editavel(projeto)
+
+        if resultado_mst.id_projeto != projeto.id_projeto:
+            raise ViolacaoIntegridadeTopologicaError(
+                f"Inconsistência de escopo: O resultado da MST pertence ao projeto "
+                f"{resultado_mst.id_projeto}, mas foi aplicado ao projeto {projeto.id_projeto}."
+            )
+
+        return replace(
+            projeto,
+            metragem_total=resultado_mst.metragem_total,
+            custo_estimado=resultado_mst.custo_estimado,
+        )
+
     def aplicar_soft_delete_ponto_no_projeto(
         self,
         id_usuario_autor: int,
@@ -274,16 +345,16 @@ class GovernancaMultiTenantService:
     ) -> PontoRede:
         """
         Seção 3.3 da Documentação (Soft Delete) e Modelo Físico (ON DELETE RESTRICT):
-        - Em vez de deletar fisicamente o registro em `Ponto_Rede`, altera `Status_Ponto`
-          na associativa `Contem` para `'Removido'` ou `'Inativo'`.
-        - Bloqueia a desativação caso existam `Trecho_Rede` ativos ancorados neste ponto
-          (a menos que `forcar_cascata_topologica=True` seja indicado para recalcular a AGM).
+        - Altera `Status_Ponto` na associativa `Contem` para `'Removido'` ou `'Inativo'`.
+        - Bloqueia a desativação em projetos congelados ou caso existam `Trecho_Rede` ativos
+          ancorados neste ponto sem recálculo topológico autorizado.
         """
         self.validar_acesso_tenant(
             id_usuario=id_usuario_autor,
             id_empresa=projeto.id_empresa,
             exigir_escrita=True,
         )
+        self._verificar_projeto_editavel(projeto)
 
         if novo_status_ponto == StatusPontoProjeto.ATIVO:
             raise ValidacaoDominioError(
@@ -306,4 +377,3 @@ class GovernancaMultiTenantService:
             )
 
         return replace(ponto, status_ponto=novo_status_ponto.value)
-
