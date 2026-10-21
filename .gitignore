@@ -1,6 +1,18 @@
-# Dependências
+# Dependências (Node / Python)
 node_modules/
 vendor/
+venv/
+.venv/
+env/
+ENV/
+
+# Python / FastAPI Cache e Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Arquivos de ambiente e configuração local
 .env
@@ -12,6 +24,7 @@ assets/js/config.js
 dist/
 build/
 out/
+*.egg-info/
 
 # Logs
 logs/
@@ -36,4 +49,3 @@ Desktop.ini
 .cache/
 tmp/
 temp/
-

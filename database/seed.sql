@@ -55,3 +55,4 @@ INSERT INTO Trecho_Rede (Geometria_Linha, Distancia_Metros, Origem_ID, Destino_I
   1,
   1
 );
+
