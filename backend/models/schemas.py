@@ -95,6 +95,11 @@ class PontoRedeSchema(BaseModel):
         return v
 
 
+class CoordenadaLatLngSchema(BaseModel):
+    lat: float = Field(..., ge=-90, le=90, description="Latitude WGS 84 (compatível com Google Maps)")
+    lng: float = Field(..., ge=-180, le=180, description="Longitude WGS 84 (compatível com Google Maps)")
+
+
 class ArestaCandidataSchema(BaseModel):
     origem_id: int = Field(..., gt=0, description="FK Origem_ID referenciando Ponto_Rede")
     destino_id: int = Field(..., gt=0, description="FK Destino_ID referenciando Ponto_Rede")
@@ -107,6 +112,10 @@ class ArestaCandidataSchema(BaseModel):
         default=None,
         gt=0,
         description="FK opcional para Tipo_Cabo; se omitida, seleciona o cabo compatível de menor custo",
+    )
+    caminho_coordenadas: Optional[List[CoordenadaLatLngSchema]] = Field(
+        default=None,
+        description="Vértices intermediários da polilinha viária do Google Maps ({lat, lng})",
     )
 
 
@@ -132,6 +141,10 @@ class TrechoRedeMSTSchema(BaseModel):
     geometria_wkt: str = Field(
         ...,
         description="Representação WKT LineString (SRID 4326) para persistência no PostGIS",
+    )
+    caminho_coordenadas: List[CoordenadaLatLngSchema] = Field(
+        default_factory=list,
+        description="Array de {lat, lng} pronto para `new google.maps.Polyline({ path })`",
     )
 
 

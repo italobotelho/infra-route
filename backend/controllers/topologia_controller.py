@@ -13,6 +13,7 @@ from backend.models.schemas import (
 )
 from backend.services.prim_service import (
     ArestaCandidata,
+    CoordenadaLatLng,
     GrafoTopologicoOptico,
     PontoRede,
     TipoCabo,
@@ -69,6 +70,11 @@ def calcular_mst_projeto(
                     destino_id=a.destino_id,
                     distancia_metros=a.distancia_metros,
                     id_tipo_cabo=a.id_tipo_cabo,
+                    caminho_coordenadas=(
+                        tuple(CoordenadaLatLng(lat=c.lat, lng=c.lng) for c in a.caminho_coordenadas)
+                        if a.caminho_coordenadas
+                        else None
+                    ),
                 )
                 for a in payload.arestas_candidatas
             ]

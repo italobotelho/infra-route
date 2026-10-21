@@ -3,11 +3,14 @@ Motor de Processamento Topológico e Algoritmo de Prim (Árvore Geradora Mínima
 
 Implementa as diretrizes arquiteturais documentadas em `docs/`:
 1. Modelagem em memória por Lista de Adjacência (`Dict[int, List[Adjacencia]]`).
-2. Abstração da direcionalidade (Origem/Destino -> Grafo Não Direcionado Bidirecional).
+2. Abstração da direcionalidade (Origem/Destino -> Grafo Não Direcionado Bidirecional)
+   com preservação da orientação paramétrica do vetor viário (`Geometria_Linha`).
 3. Resolução da Dependência Triangular e filtro de Soft Delete (`Status_Ponto == 'Ativo'`).
 4. Trava Topológica Anti-Loop (`Origem_ID <> Destino_ID`).
 5. Árvore Geradora Mínima Constrita (`Limite_Distancia_Metros` de `Tipo_Cabo`).
-6. Memoização de `Metragem_Total` e `Custo_Estimado` para a entidade `Projeto`.
+6. Pré-filtro espacial por Bounding Box (inspirado no índice GIST) e suporte direto
+   a coordenadas e polilinhas reais vindas da API do Google Maps (`{lat, lng}`).
+7. Memoização de `Metragem_Total` e `Custo_Estimado` para a entidade `Projeto`.
 """
 
 from dataclasses import dataclass, field
@@ -30,6 +33,22 @@ class StatusPontoProjeto(str, Enum):
     ATIVO = "Ativo"
     INATIVO = "Inativo"
     REMOVIDO = "Removido"
+
+
+@dataclass(frozen=True)
+class CoordenadaLatLng:
+    """Coordenada geográfica compatível com `google.maps.LatLngLiteral` ({lat, lng})."""
+
+    lat: float
+    lng: float
+
+    def __post_init__(self) -> None:
+        if not (math.isfinite(self.lat) and math.isfinite(self.lng)):
+            raise ValidacaoDominioError("Coordenadas lat/lng devem ser números finitos.")
+        if not (-90.0 <= self.lat <= 90.0):
+            raise ValidacaoDominioError(f"Latitude fora do intervalo [-90, 90]: {self.lat}")
+        if not (-180.0 <= self.lng <= 180.0):
+            raise ValidacaoDominioError(f"Longitude fora do intervalo [-180, 180]: {self.lng}")
 
 
 @dataclass(frozen=True)
@@ -80,6 +99,7 @@ class ArestaCandidata:
     destino_id: int
     distancia_metros: Optional[float] = None
     id_tipo_cabo: Optional[int] = None
+    caminho_coordenadas: Optional[Tuple[CoordenadaLatLng, ...]] = None
 
 
 @dataclass(frozen=True)
@@ -92,6 +112,7 @@ class Adjacencia:
     id_tipo_cabo: int
     modelo_cabo: str
     custo_trecho: float
+    caminho_coordenadas: Tuple[CoordenadaLatLng, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -107,6 +128,7 @@ class TrechoRedeMST:
     distancia_metros: float
     custo_trecho: float
     geometria_wkt: str
+    caminho_coordenadas: List[Dict[str, float]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -159,21 +181,33 @@ def calcular_distancia_haversine(
     return round(distancia_bruta, 2)
 
 
-def gerar_linestring_wkt(ponto_origem: PontoRede, ponto_destino: PontoRede) -> str:
+def gerar_linestring_wkt(
+    ponto_origem: PontoRede,
+    ponto_destino: PontoRede,
+    caminho_coordenadas: Optional[Sequence[CoordenadaLatLng]] = None,
+) -> str:
     """
     Gera a representação geométrica WKT (LineString, SRID 4326) no padrão PostGIS (Longitude Latitude).
+    - Formata com 8 casas decimais fixas (`:.8f`) para evitar notação científica (`1e-07`)
+      próxima ao Equador/Meridiano de Greenwich, que quebraria o parser WKT do PostGIS.
+    - Suporta polilinhas com múltiplos vértices intermediários vindos do Google Maps Directions API.
     """
-    return (
-        f"SRID=4326;LINESTRING("
-        f"{ponto_origem.longitude} {ponto_origem.latitude}, "
-        f"{ponto_destino.longitude} {ponto_destino.latitude})"
-    )
+    if caminho_coordenadas and len(caminho_coordenadas) >= 2:
+        vertices_str = ", ".join(f"{c.lng:.8f} {c.lat:.8f}" for c in caminho_coordenadas)
+    else:
+        vertices_str = (
+            f"{ponto_origem.longitude:.8f} {ponto_origem.latitude:.8f}, "
+            f"{ponto_destino.longitude:.8f} {ponto_destino.latitude:.8f}"
+        )
+    return f"SRID=4326;LINESTRING({vertices_str})"
 
 
 class GrafoTopologicoOptico:
     """
     Modela a topologia de um Projeto em memória por meio de Listas de Adjacência.
     """
+
+    DISTANCIA_MINIMA_JUMPER_METROS: float = 0.01
 
     def __init__(
         self,
@@ -194,6 +228,10 @@ class GrafoTopologicoOptico:
             if cabo.id_cabo in self.catalogo_cabos:
                 raise ValidacaoDominioError(f"ID_Cabo duplicado no catálogo: {cabo.id_cabo}")
             self.catalogo_cabos[cabo.id_cabo] = cabo
+
+        self.maior_limite_cabo_metros: float = max(
+            c.limite_distancia_metros for c in self.catalogo_cabos.values()
+        )
 
         # Valida unicidade de ID_Ponto na entrada e filtra apenas nós ativos (Seções 3.1 e 3.3)
         ids_vistos: Set[int] = set()
@@ -238,7 +276,6 @@ class GrafoTopologicoOptico:
                 return cabo
             return None
 
-        # Seleciona o cabo que suporta o vão livre com menor Custo_Por_Metro
         cabos_validos = [
             cabo
             for cabo in self.catalogo_cabos.values()
@@ -281,6 +318,7 @@ class GrafoTopologicoOptico:
         destino_id: int,
         distancia_metros: Optional[float] = None,
         id_tipo_cabo: Optional[int] = None,
+        caminho_coordenadas: Optional[Sequence[CoordenadaLatLng]] = None,
     ) -> bool:
         """
         Adiciona uma aresta não direcionada (bidirecional) na Lista de Adjacência,
@@ -291,7 +329,6 @@ class GrafoTopologicoOptico:
             return False
 
         # 2. Resolução da Dependência Triangular (Seção 3.1):
-        # Garante que ambos os nós pertencem ao escopo ativo do projeto
         if origem_id not in self.nos_ativos or destino_id not in self.nos_ativos:
             return False
 
@@ -302,15 +339,19 @@ class GrafoTopologicoOptico:
         if distancia_metros is not None:
             if not math.isfinite(distancia_metros) or distancia_metros <= 0:
                 return False
-            dist = round(float(distancia_metros), 2)
-            if dist <= 0:
-                return False
+            dist = max(self.DISTANCIA_MINIMA_JUMPER_METROS, round(float(distancia_metros), 2))
         else:
-            dist = calcular_distancia_haversine(
+            dist_haversine = calcular_distancia_haversine(
                 ponto_u.latitude, ponto_u.longitude, ponto_v.latitude, ponto_v.longitude
             )
-            if dist <= 0:
-                return False
+            # Se dois ativos distintos (ex: CEO e CTO no mesmo poste/caixa ou clique duplo no mapa)
+            # compartilham a mesma coordenada GPS, adota o vão mínimo de manobra (0.01m)
+            # para respeitar CHECK (Distancia_Metros > 0) sem desconectar a topologia.
+            dist = (
+                dist_haversine
+                if dist_haversine > 0.0
+                else self.DISTANCIA_MINIMA_JUMPER_METROS
+            )
 
         # 4. Restrição Física de Engenharia de Enlaces (Limite_Distancia_Metros)
         cabo = self._selecionar_cabo_compativel(dist, id_tipo_cabo)
@@ -319,8 +360,17 @@ class GrafoTopologicoOptico:
 
         custo_trecho = round(dist * cabo.custo_por_metro, 2)
 
-        # 5. Resolução do Paradoxo da Direcionalidade (Seção 3.2):
-        # Abstrai Origem/Destino transformando o registro em adjacência bidirecional sem duplicatas
+        # 5. Construção do vetor viário orientado (Origem -> Destino e Destino -> Origem)
+        if caminho_coordenadas and len(caminho_coordenadas) >= 2:
+            rota_direta = tuple(caminho_coordenadas)
+            rota_inversa = tuple(reversed(caminho_coordenadas))
+        else:
+            coord_u = CoordenadaLatLng(lat=ponto_u.latitude, lng=ponto_u.longitude)
+            coord_v = CoordenadaLatLng(lat=ponto_v.latitude, lng=ponto_v.longitude)
+            rota_direta = (coord_u, coord_v)
+            rota_inversa = (coord_v, coord_u)
+
+        # 6. Resolução do Paradoxo da Direcionalidade (Seção 3.2):
         self._inserir_ou_atualizar_vizinho(
             Adjacencia(
                 origem_id=origem_id,
@@ -329,6 +379,7 @@ class GrafoTopologicoOptico:
                 id_tipo_cabo=cabo.id_cabo,
                 modelo_cabo=cabo.descricao_modelo,
                 custo_trecho=custo_trecho,
+                caminho_coordenadas=rota_direta,
             )
         )
         self._inserir_ou_atualizar_vizinho(
@@ -339,6 +390,7 @@ class GrafoTopologicoOptico:
                 id_tipo_cabo=cabo.id_cabo,
                 modelo_cabo=cabo.descricao_modelo,
                 custo_trecho=custo_trecho,
+                caminho_coordenadas=rota_inversa,
             )
         )
         return True
@@ -348,7 +400,8 @@ class GrafoTopologicoOptico:
     ) -> None:
         """
         Popula a Lista de Adjacência a partir de arestas candidatas explícitas ou,
-        quando não informadas, calcula os vãos viáveis entre os pontos ativos do projeto.
+        quando não informadas, calcula os vãos viáveis entre os pontos ativos do projeto
+        utilizando pré-filtro de Bounding Box espacial.
         """
         if arestas_candidatas is not None:
             for aresta in arestas_candidatas:
@@ -357,13 +410,22 @@ class GrafoTopologicoOptico:
                     destino_id=aresta.destino_id,
                     distancia_metros=aresta.distancia_metros,
                     id_tipo_cabo=aresta.id_tipo_cabo,
+                    caminho_coordenadas=aresta.caminho_coordenadas,
                 )
             return
 
         ids_nos = sorted(self.nos_ativos.keys())
         total_nos = len(ids_nos)
+        # 1 grau de latitude equivale a ~110.574 km (margem segura de 110.000m)
+        delta_lat_max_graus = (self.maior_limite_cabo_metros / 110000.0) * 1.05
+
         for i in range(total_nos):
+            u = self.nos_ativos[ids_nos[i]]
             for j in range(i + 1, total_nos):
+                v = self.nos_ativos[ids_nos[j]]
+                # Pré-filtro rápido por Bounding Box Latitudinal (evita trigonometria desnecessária)
+                if abs(u.latitude - v.latitude) > delta_lat_max_graus:
+                    continue
                 self.adicionar_aresta_bidirecional(ids_nos[i], ids_nos[j])
 
     def extrair_mst_prim(
@@ -404,8 +466,6 @@ class GrafoTopologicoOptico:
         )
 
         visitados: Set[int] = {raiz_id}
-        # Chave determinística da Min-Heap:
-        # (distancia_metros, custo_trecho, menor_id_no, maior_id_no, destino_id, Adjacencia)
         fila_prioridade: List[Tuple[float, float, int, int, int, Adjacencia]] = []
 
         for adj in self.lista_adjacencia[raiz_id]:
@@ -437,6 +497,10 @@ class GrafoTopologicoOptico:
             ponto_origem = self.nos_ativos[aresta_escolhida.origem_id]
             ponto_destino = self.nos_ativos[aresta_escolhida.destino_id]
 
+            caminho_google_maps = [
+                {"lat": c.lat, "lng": c.lng} for c in aresta_escolhida.caminho_coordenadas
+            ]
+
             trechos_mst.append(
                 TrechoRedeMST(
                     id_trecho=sequencial_trecho,
@@ -449,7 +513,12 @@ class GrafoTopologicoOptico:
                     modelo_cabo=aresta_escolhida.modelo_cabo,
                     distancia_metros=aresta_escolhida.distancia_metros,
                     custo_trecho=aresta_escolhida.custo_trecho,
-                    geometria_wkt=gerar_linestring_wkt(ponto_origem, ponto_destino),
+                    geometria_wkt=gerar_linestring_wkt(
+                        ponto_origem,
+                        ponto_destino,
+                        aresta_escolhida.caminho_coordenadas,
+                    ),
+                    caminho_coordenadas=caminho_google_maps,
                 )
             )
             sequencial_trecho += 1
@@ -470,8 +539,6 @@ class GrafoTopologicoOptico:
                         ),
                     )
 
-        # Seção 2.5 e 2.6 da Documentação:
-        # Memoização de Metragem_Total e Custo_Estimado (respeitando cardinalidade (0,1) de hardware)
         metragem_total = round(sum(t.distancia_metros for t in trechos_mst), 2)
         custo_total_cabos = round(sum(t.custo_trecho for t in trechos_mst), 2)
         custo_total_equipamentos = round(

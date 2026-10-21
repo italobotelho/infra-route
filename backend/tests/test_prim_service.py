@@ -10,6 +10,7 @@ import unittest
 
 from backend.services.prim_service import (
     ArestaCandidata,
+    CoordenadaLatLng,
     GrafoTopologicoOptico,
     PontoRede,
     StatusFisicoPonto,
@@ -437,6 +438,87 @@ class TestPrimServiceRobustez(unittest.TestCase):
         self.assertEqual(res_estresse.nos_ativos_processados, 100)
         self.assertEqual(len(res_estresse.trechos_mst), 99)
         self.assertLess(duracao_ms, 500.0, f"Execução lenta para 100 nós: {duracao_ms:.2f} ms")
+
+    def test_14_google_maps_coordenadas_reais_alta_precisao_e_equador(self) -> None:
+        """
+        Testa coordenadas reais extraídas de cliques no Google Maps (15 casas decimais)
+        e coordenadas próximas à Linha do Equador (`1e-7`), garantindo que o WKT gerado
+        para o PostGIS nunca emita notação científica (`1e-07`) e retorne `caminho_coordenadas`
+        no formato `{lat, lng}` do Google Maps.
+        """
+        pontos = [
+            PontoRede(1, "Marco Zero Equador", 0.0000001, -46.985234567891234),
+            PontoRede(2, "Poste Adjacente", -0.0000002, -46.985123456789123),
+        ]
+        grafo = GrafoTopologicoOptico(1, pontos, self.catalogo_padrao)
+        grafo.construir_lista_adjacencia()
+        res = grafo.extrair_mst_prim()
+
+        self.assertTrue(res.grafo_conexo)
+        wkt = res.trechos_mst[0].geometria_wkt
+        self.assertNotIn("e-", wkt.lower(), f"Notação científica vazou no WKT: {wkt}")
+        self.assertTrue(wkt.startswith("SRID=4326;LINESTRING("))
+        self.assertEqual(len(res.trechos_mst[0].caminho_coordenadas), 2)
+        self.assertIn("lat", res.trechos_mst[0].caminho_coordenadas[0])
+        self.assertIn("lng", res.trechos_mst[0].caminho_coordenadas[0])
+
+    def test_15_google_maps_clique_duplo_mesma_coordenada_nao_quebra_grafo(self) -> None:
+        """
+        Se o usuário clicar duas vezes exatamente no mesmo pixel no Google Maps (ou cadastrar
+        uma CEO e uma CTO no mesmo poste físico com mesma lat/lng), o grafo não pode ficar
+        desconexo nem violar `CHECK (Distancia_Metros > 0)`.
+        """
+        pontos = [
+            PontoRede(1, "CEO Poste #100", -22.905560, -47.060830, id_tipo_equipamento=2, custo_equipamento=520.0),
+            PontoRede(2, "CTO Poste #100 (Mesmo Poste)", -22.905560, -47.060830, id_tipo_equipamento=1, custo_equipamento=380.0),
+            PontoRede(3, "Poste #101", -22.906100, -47.061200, id_tipo_equipamento=1, custo_equipamento=380.0),
+        ]
+        grafo = GrafoTopologicoOptico(1, pontos, self.catalogo_padrao)
+        grafo.construir_lista_adjacencia()
+        res = grafo.extrair_mst_prim()
+
+        self.assertTrue(res.grafo_conexo)
+        self.assertEqual(len(res.trechos_mst), 2)
+        self.assertEqual(res.trechos_mst[0].distancia_metros, 0.01)
+
+    def test_16_google_maps_polilinha_viaria_sinuosa_reversao_orientacao(self) -> None:
+        """
+        Seções 2.8 e 3.2 da Documentação:
+        Quando a aresta candidata traz uma polilinha viária do Google Maps (múltiplos vértices
+        acompanhando curvas de rua de 2 -> 1), se o Prim percorrer no sentido inverso (1 -> 2),
+        a orientação dos vértices da polilinha deve ser invertida automaticamente para `1 -> 2`.
+        """
+        pontos = [
+            PontoRede(1, "POP Origem", -22.9000, -47.0600),
+            PontoRede(2, "CTO Destino", -22.9020, -47.0620),
+        ]
+        # Polilinha informada no sentido 2 -> 1 com esquina intermediária
+        curva_rua = (
+            CoordenadaLatLng(lat=-22.9020, lng=-47.0620),  # Nó 2
+            CoordenadaLatLng(lat=-22.9015, lng=-47.0605),  # Esquina intermediária
+            CoordenadaLatLng(lat=-22.9000, lng=-47.0600),  # Nó 1
+        )
+        arestas = [
+            ArestaCandidata(
+                origem_id=2,
+                destino_id=1,
+                distancia_metros=310.0,
+                caminho_coordenadas=curva_rua,
+            )
+        ]
+
+        grafo = GrafoTopologicoOptico(1, pontos, self.catalogo_padrao)
+        grafo.construir_lista_adjacencia(arestas)
+        # Inicia o Prim pelo Nó 1 (forçando travessia 1 -> 2, oposta ao cadastro 2 -> 1)
+        res = grafo.extrair_mst_prim(no_inicial_id=1)
+
+        trecho = res.trechos_mst[0]
+        self.assertEqual(trecho.origem_id, 1)
+        self.assertEqual(trecho.destino_id, 2)
+        # O primeiro vértice da polilinha agora deve ser o Nó 1 e o último deve ser o Nó 2!
+        self.assertAlmostEqual(trecho.caminho_coordenadas[0]["lat"], -22.9000)
+        self.assertAlmostEqual(trecho.caminho_coordenadas[1]["lat"], -22.9015)
+        self.assertAlmostEqual(trecho.caminho_coordenadas[2]["lat"], -22.9020)
 
 
 if __name__ == "__main__":
