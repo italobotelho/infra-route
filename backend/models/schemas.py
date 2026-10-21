@@ -3,8 +3,9 @@ Schemas Pydantic alinhados à modelagem lógica e física do sistema InfraRoute.
 """
 
 from enum import Enum
+import math
 from typing import Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class EnumStatusProjeto(str, Enum):
@@ -27,16 +28,22 @@ class EnumStatusPonto(str, Enum):
     REMOVIDO = "Removido"
 
 
+class EnumNivelAcesso(str, Enum):
+    ADMINISTRADOR = "Administrador"
+    PROJETISTA = "Projetista"
+    VISUALIZADOR = "Visualizador"
+
+
 class TipoEquipamentoSchema(BaseModel):
-    id_tipo_equipamento: int = Field(..., description="PK de Tipo_Equipamento")
-    categoria: str = Field(..., description="Ex: CTO, Caixa de Emenda, Switch")
-    fabricante: str = Field(..., description="Ex: Furukawa, Huawei, Intelbras, Cisco")
+    id_tipo_equipamento: int = Field(..., gt=0, description="PK de Tipo_Equipamento")
+    categoria: str = Field(..., min_length=1, description="Ex: CTO, Caixa de Emenda, Switch")
+    fabricante: str = Field(..., min_length=1, description="Ex: Furukawa, Huawei, Intelbras, Cisco")
     custo_unitario: float = Field(..., ge=0, description="Custo unitário do hardware (>= 0)")
 
 
 class TipoCaboSchema(BaseModel):
-    id_cabo: int = Field(..., description="PK de Tipo_Cabo")
-    descricao_modelo: str = Field(..., description="Nomenclatura comercial do cabo óptico")
+    id_cabo: int = Field(..., gt=0, description="PK de Tipo_Cabo")
+    descricao_modelo: str = Field(..., min_length=1, description="Nomenclatura comercial do cabo óptico")
     custo_por_metro: float = Field(..., ge=0, description="Custo por metro linear (>= 0)")
     limite_distancia_metros: float = Field(
         ...,
@@ -44,10 +51,17 @@ class TipoCaboSchema(BaseModel):
         description="Vão livre máximo suportado pela resistência mecânica/tração do cabo (> 0)",
     )
 
+    @field_validator("descricao_modelo")
+    @classmethod
+    def validar_descricao_nao_vazia(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Descricao_Modelo não pode estar em branco.")
+        return v.strip()
+
 
 class PontoRedeSchema(BaseModel):
-    id_ponto: int = Field(..., description="PK de Ponto_Rede (Nó do grafo)")
-    descricao: str = Field(..., description="Identificação do ativo (ex: Poste Concreto #104)")
+    id_ponto: int = Field(..., gt=0, description="PK de Ponto_Rede (Nó do grafo)")
+    descricao: str = Field(..., min_length=1, description="Identificação do ativo (ex: Poste Concreto #104)")
     latitude: float = Field(..., ge=-90, le=90, description="Latitude WGS 84 (SRID 4326)")
     longitude: float = Field(..., ge=-180, le=180, description="Longitude WGS 84 (SRID 4326)")
     status_fisico: EnumStatusFisico = Field(default=EnumStatusFisico.PROJETADO)
@@ -57,6 +71,7 @@ class PontoRedeSchema(BaseModel):
     )
     id_tipo_equipamento: Optional[int] = Field(
         default=None,
+        gt=0,
         description="FK opcional (0,1) para Tipo_Equipamento; None indica nó de passagem mecânica",
     )
     custo_equipamento: float = Field(
@@ -65,10 +80,24 @@ class PontoRedeSchema(BaseModel):
         description="Custo unitário do equipamento acoplado ao ponto (quando aplicável)",
     )
 
+    @field_validator("descricao")
+    @classmethod
+    def validar_descricao_ponto(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("A descrição do Ponto_Rede não pode estar em branco.")
+        return v.strip()
+
+    @field_validator("latitude", "longitude", "custo_equipamento")
+    @classmethod
+    def validar_float_finito(cls, v: float) -> float:
+        if not math.isfinite(v):
+            raise ValueError("O valor numérico deve ser finito.")
+        return v
+
 
 class ArestaCandidataSchema(BaseModel):
-    origem_id: int = Field(..., description="FK Origem_ID referenciando Ponto_Rede")
-    destino_id: int = Field(..., description="FK Destino_ID referenciando Ponto_Rede")
+    origem_id: int = Field(..., gt=0, description="FK Origem_ID referenciando Ponto_Rede")
+    destino_id: int = Field(..., gt=0, description="FK Destino_ID referenciando Ponto_Rede")
     distancia_metros: Optional[float] = Field(
         default=None,
         gt=0,
@@ -76,6 +105,7 @@ class ArestaCandidataSchema(BaseModel):
     )
     id_tipo_cabo: Optional[int] = Field(
         default=None,
+        gt=0,
         description="FK opcional para Tipo_Cabo; se omitida, seleciona o cabo compatível de menor custo",
     )
 
@@ -137,6 +167,7 @@ class RequisicaoCalculoMSTSchema(BaseModel):
     )
     no_inicial_id: Optional[int] = Field(
         default=None,
+        gt=0,
         description="ID_Ponto raiz para iniciar o Algoritmo de Prim (opcional)",
     )
 

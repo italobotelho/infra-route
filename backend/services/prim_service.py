@@ -16,6 +16,8 @@ import heapq
 import math
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
+from backend.services.exceptions import ValidacaoDominioError
+
 
 class StatusFisicoPonto(str, Enum):
     PROJETADO = "Projetado"
@@ -39,11 +41,13 @@ class TipoCabo:
 
     def __post_init__(self) -> None:
         if self.id_cabo <= 0:
-            raise ValueError("ID_Cabo deve ser um inteiro positivo.")
+            raise ValidacaoDominioError("ID_Cabo deve ser um inteiro positivo.")
+        if not (self.descricao_modelo and self.descricao_modelo.strip()):
+            raise ValidacaoDominioError("Descricao_Modelo do cabo não pode ser vazia.")
         if not math.isfinite(self.custo_por_metro) or self.custo_por_metro < 0:
-            raise ValueError("Custo_Por_Metro deve ser um número finito >= 0.")
+            raise ValidacaoDominioError("Custo_Por_Metro deve ser um número finito >= 0.")
         if not math.isfinite(self.limite_distancia_metros) or self.limite_distancia_metros <= 0:
-            raise ValueError("Limite_Distancia_Metros deve ser um número finito > 0.")
+            raise ValidacaoDominioError("Limite_Distancia_Metros deve ser um número finito > 0.")
 
 
 @dataclass(frozen=True)
@@ -59,13 +63,15 @@ class PontoRede:
 
     def __post_init__(self) -> None:
         if self.id_ponto <= 0:
-            raise ValueError("ID_Ponto deve ser um inteiro positivo.")
+            raise ValidacaoDominioError("ID_Ponto deve ser um inteiro positivo.")
+        if not (self.descricao and self.descricao.strip()):
+            raise ValidacaoDominioError("Descrição do Ponto_Rede não pode ser vazia.")
         if not math.isfinite(self.latitude) or not (-90.0 <= self.latitude <= 90.0):
-            raise ValueError(f"Latitude inválida para SRID 4326: {self.latitude}")
+            raise ValidacaoDominioError(f"Latitude inválida para SRID 4326: {self.latitude}")
         if not math.isfinite(self.longitude) or not (-180.0 <= self.longitude <= 180.0):
-            raise ValueError(f"Longitude inválida para SRID 4326: {self.longitude}")
+            raise ValidacaoDominioError(f"Longitude inválida para SRID 4326: {self.longitude}")
         if not math.isfinite(self.custo_equipamento) or self.custo_equipamento < 0:
-            raise ValueError("Custo de equipamento não pode ser negativo ou não-finito.")
+            raise ValidacaoDominioError("Custo de equipamento não pode ser negativo ou não-finito.")
 
 
 @dataclass(frozen=True)
@@ -123,11 +129,11 @@ def calcular_distancia_haversine(
     Calcula a distância geodésica em metros entre dois pontos WGS 84 (SRID 4326).
     """
     if not all(math.isfinite(v) for v in (lat1, lon1, lat2, lon2)):
-        raise ValueError("Coordenadas devem ser números finitos.")
+        raise ValidacaoDominioError("Coordenadas devem ser números finitos.")
     if not (-90.0 <= lat1 <= 90.0 and -90.0 <= lat2 <= 90.0):
-        raise ValueError("Latitude fora do intervalo [-90, 90].")
+        raise ValidacaoDominioError("Latitude fora do intervalo [-90, 90].")
     if not (-180.0 <= lon1 <= 180.0 and -180.0 <= lon2 <= 180.0):
-        raise ValueError("Longitude fora do intervalo [-180, 180].")
+        raise ValidacaoDominioError("Longitude fora do intervalo [-180, 180].")
 
     if lat1 == lat2 and lon1 == lon2:
         return 0.0
@@ -176,9 +182,9 @@ class GrafoTopologicoOptico:
         catalogo_cabos: Sequence[TipoCabo],
     ) -> None:
         if id_projeto <= 0:
-            raise ValueError("ID_Projeto deve ser um inteiro positivo.")
+            raise ValidacaoDominioError("ID_Projeto deve ser um inteiro positivo.")
         if not catalogo_cabos:
-            raise ValueError("O catálogo de cabos (Tipo_Cabo) não pode estar vazio.")
+            raise ValidacaoDominioError("O catálogo de cabos (Tipo_Cabo) não pode estar vazio.")
 
         self.id_projeto = id_projeto
 
@@ -186,7 +192,7 @@ class GrafoTopologicoOptico:
         self.catalogo_cabos: Dict[int, TipoCabo] = {}
         for cabo in catalogo_cabos:
             if cabo.id_cabo in self.catalogo_cabos:
-                raise ValueError(f"ID_Cabo duplicado no catálogo: {cabo.id_cabo}")
+                raise ValidacaoDominioError(f"ID_Cabo duplicado no catálogo: {cabo.id_cabo}")
             self.catalogo_cabos[cabo.id_cabo] = cabo
 
         # Valida unicidade de ID_Ponto na entrada e filtra apenas nós ativos (Seções 3.1 e 3.3)
@@ -195,7 +201,7 @@ class GrafoTopologicoOptico:
 
         for p in pontos:
             if p.id_ponto in ids_vistos:
-                raise ValueError(f"ID_Ponto duplicado na lista de entrada: {p.id_ponto}")
+                raise ValidacaoDominioError(f"ID_Ponto duplicado na lista de entrada: {p.id_ponto}")
             ids_vistos.add(p.id_ponto)
 
             status_ponto_val = (
@@ -371,7 +377,7 @@ class GrafoTopologicoOptico:
         """
         if not self.nos_ativos:
             if no_inicial_id is not None:
-                raise ValueError(
+                raise ValidacaoDominioError(
                     f"O nó inicial {no_inicial_id} não existe ou não está ativo no projeto."
                 )
             return ResultadoMSTProjeto(
@@ -387,7 +393,7 @@ class GrafoTopologicoOptico:
             )
 
         if no_inicial_id is not None and no_inicial_id not in self.nos_ativos:
-            raise ValueError(
+            raise ValidacaoDominioError(
                 f"O nó inicial {no_inicial_id} não pertence ao conjunto de nós ativos do projeto."
             )
 
