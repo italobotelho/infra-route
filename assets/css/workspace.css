@@ -1,0 +1,24 @@
+/* ==========================================================================
+   Estilos do Workspace Principal (index.html)
+   Estrutura preparada para implementação pelo responsável de CSS
+   ========================================================================== */
+
+/* 1. Cabeçalho e Navegação (.app-header, .brand, .nav-menu) */
+
+
+/* 2. Layout Principal e Painel Lateral (.app-layout, .control-panel, .panel-section) */
+
+
+/* 3. Área Central e Indicadores (.workspace-main, .metrics-bar, .metric-card) */
+
+
+/* 4. Visualização Geoespacial (.map-section, #map-canvas, .map-viewport) */
+#map-canvas {
+  width: 100%;
+  height: 500px;
+}
+
+/* 5. Tabela de Inventário (.inventory-section, .table-container) */
+
+
+/* 6. Rodapé (.app-footer) */

@@ -1,4 +1,10 @@
-/* 1. Reset de Box Sizing e Margens Globais */
+/* 1. Variáveis Globais */
+:root {
+  --bg-default: #f8f9fa;
+  --text-default: #212529;
+}
+
+/* 2. Reset de Box Sizing e Margens Globais */
 *,
 *::before,
 *::after {
@@ -7,23 +13,23 @@
   padding: 0;
 }
 
-/* 2. Configurações de Acessibilidade e Rolagem */
+/* 3. Configurações de Acessibilidade e Rolagem */
 html {
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%; /* Evita alterações de fonte no mobile */
 }
 
-/* 3. Ajustes de Corpo (Body) */
+/* 4. Ajustes de Corpo (Body) */
 body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
-  background-color: #f8f9fa; /* Exemplo de fundo claro e limpo */
-  color: #212529;            /* Exemplo de cor de texto legível */
+  background-color: var(--bg-default);
+  color: var(--text-default);
 }
 
-/* 4. Elementos de Mídia Responsivos */
+/* 5. Elementos de Mídia Responsivos */
 img,
 picture,
 video,
@@ -34,7 +40,7 @@ svg {
   height: auto;
 }
 
-/* 5. Reset de Elementos de Formulário e Tipografia */
+/* 6. Reset de Elementos de Formulário e Tipografia */
 input,
 button,
 textarea,
@@ -52,7 +58,15 @@ a {
   color: inherit;
 }
 
-#map {
-  width: 100%;
-  height: 500px; ;
+/* 7. Classes Utilitárias / Globais Base */
+.form-field {
+  /* Estrutura global de campo de formulário */
+}
+
+.btn-primary {
+  /* Estilo global de botão principal */
+}
+
+.btn-action {
+  /* Estilo global de botão de ação secundária */
 }
