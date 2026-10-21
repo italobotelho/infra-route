@@ -1,17 +1,19 @@
-document.addEventListener('DOMContentLoaded', () =>; { 
-  const loginForm = document.getElementById('loginForm'); 
-  
-  if (loginForm) { 
-    loginForm.addEventListener('submit', (e) => { 
-      e.preventDefault(); 
-      
-      const email = document.getElementById('email').value; 
-      const password = document.getElementById('password').value; 
-      const crea = document.getElementById('crea').value; 
-      
-      console.log('Dados do Login para autenticação:', { email, password, crea }); 
-      
-      alert(`Autenticando no InfraRoute...\nE-mail: ${email}\nCREA: ${crea}`); 
-    }); 
-  } 
+document.addEventListener("DOMContentLoaded", () => {
+  const loginForm = document.getElementById("form-login");
+
+  if (loginForm) {
+    loginForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+
+      const email = document.getElementById("email")?.value.trim();
+      const senha = document.getElementById("senha")?.value;
+
+      if (!email || !senha) {
+        return;
+      }
+
+      sessionStorage.setItem("infraroute_user", JSON.stringify({ email }));
+      window.location.href = "index.html";
+    });
+  }
 });

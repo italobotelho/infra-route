@@ -6,6 +6,7 @@ vendor/
 .env
 .env.local
 .env.*.local
+assets/js/config.js
 
 # Build / Distribuição
 dist/
@@ -35,3 +36,4 @@ Desktop.ini
 .cache/
 tmp/
 temp/
+
