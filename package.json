@@ -1,0 +1,7 @@
+{
+  "name": "infraroute-workspace",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix ./infraroute run dev"
+  }
+}
