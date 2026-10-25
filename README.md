@@ -1,37 +1,26 @@
 # InfraRoute
 
-Plataforma SaaS para planejamento geoespacial, cálculo de Árvore Geradora Mínima (Algoritmo de Prim) e gestão de infraestrutura de fibra óptica.
-
-## Estrutura do Projeto
-
-```text
-infra-route/
-├── assets/
-│   ├── css/
-│   │   ├── global.css       # Reset, variáveis (:root) e componentes base
-│   │   ├── login.css        # Estilos da tela de autenticação
-│   │   └── workspace.css    # Layout do painel, mapa e tabelas
-│   ├── img/
-│   │   └── logo.jpg         # Logotipo da plataforma
-│   └── js/
-│       ├── config.example.js # Exemplo de configuração (Google Maps API Key)
-│       ├── models.js         # Modelos de domínio (Projeto, PontoRede, TrechoRede)
-│       ├── prim.js           # Algoritmo de Prim e cálculo geodésico (Haversine)
-│       ├── login.js          # Lógica de autenticação
-│       └── main.js           # Controle do workspace e mapa
-├── database/
-│   ├── schema_postgis.sql   # DDL PostgreSQL + PostGIS / pgRouting (SRID 4326)
-│   └── seed.sql             # Dados iniciais para testes
-├── docs/
-│   ├── Documentacao_Arquitetura_de_Banco_de_Dados.pdf
-│   ├── Documentacao_Modelagem_Conceitual.pdf
-│   ├── Documentacao_Modelagem_Fisica.pdf
-│   └── Documentacao_Modelagem_Logica.pdf
-├── index.html               # Workspace principal (Topologia e Projetos)
-└── login.html               # Tela de acesso corporativo
+```
+npm install
+npm run dev
 ```
 
-## Tecnologias
+Rotas: `/cadastro` · `/projetos` · `/workspace`
 
-- **Frontend:** HTML5 Semântico, CSS3, JavaScript (ES6+), Google Maps JS API
-- **Banco de Dados:** PostgreSQL com extensões **PostGIS** (`GEOMETRY(Point/LineString, 4326)`) e **pgRouting**
+## Estrutura
+```
+infraroute/
+├─ index.html
+├─ package.json · vite.config.js · tailwind.config.js · postcss.config.js
+├─ public/favicon.svg
+└─ src/
+   ├─ main.jsx            # entrada (importa index.css)
+   ├─ App.jsx             # rotas (react-router-dom)
+   ├─ index.css           # Tailwind + variáveis de cor (global, uma única vez)
+   ├─ components/         # componentes compartilhados entre telas (vazio por enquanto)
+   └─ pages/
+      ├─ Cadastro/        # index.jsx · validators.js · cadastro.css (escopado em .cadastro)
+      ├─ Projetos/        # index.jsx · components/ (CurrentProjects, Sidebar, icons/) · assets/
+      └─ Workspace/       # index.jsx (mapa GIS) · assets/
+```
+Os SVGs em `assets/` são **placeholders**: troque pelos originais mantendo os nomes.
