@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { apiRequest, saveSession } from "../../lib/api";
 import {
   estadoInicial,
   validarNome,
@@ -19,10 +21,13 @@ function CampoErro({ children }) {
 }
 
 export default function Cadastro() {
+  const navigate = useNavigate();
   const [form, setForm] = useState(estadoInicial);
   const [enviado, setEnviado] = useState(false);
   const [sucesso, setSucesso] = useState(false);
   const [tocados, setTocados] = useState({});
+  const [erroApi, setErroApi] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const forcaSenha = avaliarSenha(form.senha);
   const erros = {
@@ -63,7 +68,7 @@ export default function Cadastro() {
     return erros[campo] ? "border-red-500" : "border-green-600";
   }
 
-  function enviarFormulario(evento) {
+  async function enviarFormulario(evento) {
     evento.preventDefault();
     setEnviado(true);
     setSucesso(false);
@@ -74,10 +79,28 @@ export default function Cadastro() {
 
     if (!formularioValido) return;
 
-    setForm(estadoInicial);
-    setTocados({});
-    setEnviado(false);
-    setSucesso(true);
+    setIsSubmitting(true);
+    setErroApi("");
+    try {
+      const session = await apiRequest("/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          nome: form.nome.trim(),
+          email: form.email.trim(),
+          senha: form.senha,
+          telefone: form.telefone,
+          cpf: form.cpf,
+          crea: form.crea,
+        }),
+      });
+      saveSession(session);
+      setSucesso(true);
+      navigate("/projetos", { replace: true });
+    } catch (error) {
+      setErroApi(error.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -269,13 +292,24 @@ export default function Cadastro() {
                 Cadastro enviado com sucesso!
               </p>
             )}
+            {erroApi && (
+              <p className="text-sm text-red-600" role="alert">
+                {erroApi}
+              </p>
+            )}
             <button
               className="flex min-h-12 w-full items-center justify-center rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold leading-6 text-white transition-colors hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300"
               type="submit"
-              disabled={!formularioValido}
+              disabled={!formularioValido || isSubmitting}
             >
-              Criar conta
+              {isSubmitting ? "Criando conta..." : "Criar conta"}
             </button>
+            <p className="text-center text-sm text-slate-600">
+              Já tem uma conta?{" "}
+              <Link className="font-semibold text-blue-700 hover:underline" to="/login">
+                Entrar
+              </Link>
+            </p>
           </form>
         </div>
       </section>

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-// Arquivo com a chave, uma pasta acima deste index.jsx.
-// Conteúdo esperado:  export const GOOGLE_MAPS_API_KEY = "SUA_CHAVE";
-import { GOOGLE_MAPS_API_KEY } from "./assets/config.js";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { apiRequest, getSession } from "../../lib/api";
 import "./workspace-gis.css";
 import xdefault from "./assets/default.svg";
 import default2 from "./assets/default-2.svg";
@@ -24,6 +23,8 @@ import default18 from "./assets/default-18.svg";
 import default23 from "./assets/default-23.svg";
 import image from "./assets/image.svg";
 import zoom from "./assets/zoom.svg";
+
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
 // Junta nomes de classe, ignorando valores falsos.
 const cx = (...names) => names.filter(Boolean).join(" ");
@@ -361,7 +362,7 @@ function MapCanvas({
       try {
         if (!GOOGLE_MAPS_API_KEY) {
           throw new Error(
-            "Chave não encontrada. Exporte GOOGLE_MAPS_API_KEY no arquivo ../apiKey.",
+            "Chave não encontrada. Configure VITE_GOOGLE_MAPS_API_KEY ou GOOGLE_MAPS_API_KEY no arquivo .env.local, na pasta infraroute, e reinicie o Vite.",
           );
         }
         await loadGoogleMaps(GOOGLE_MAPS_API_KEY);
@@ -628,7 +629,7 @@ function ToolHint({ tool, selectedCount }) {
 /* Painéis sobre o mapa                                                */
 /* ------------------------------------------------------------------ */
 
-function MapStats({ poleCount }) {
+function MapStats({ poleCount, distanceMeters, estimatedCost }) {
   return (
     <aside className="map-stats">
       <div className="map-stats__group">
@@ -637,7 +638,7 @@ function MapStats({ poleCount }) {
         </span>
         <span className="map-stats__value-row">
           <strong className="map-stats__value">
-            0.00
+            {(distanceMeters / 1000).toFixed(2)}
           </strong>
           <span className="map-stats__unit">
             km
@@ -650,7 +651,7 @@ function MapStats({ poleCount }) {
           Custo Estimado da Obra
         </span>
         <strong className="map-stats__value">
-          R$ 0,00
+          {estimatedCost.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
         </strong>
       </div>
       <span className="divider-vertical" aria-hidden="true" />
@@ -793,7 +794,16 @@ function LayerSwitch({ layer, enabled, onToggle }) {
   );
 }
 
-function Sidebar({ poleCount, searchEnabled, onSearch, onClearSearch }) {
+function Sidebar({
+  poleCount,
+  searchEnabled,
+  onSearch,
+  onClearSearch,
+  projectName,
+  canCalculate,
+  onCalculate,
+  isCalculating,
+}) {
   const [search, setSearch] = useState("");
   const [searchState, setSearchState] = useState({
     message: "",
@@ -852,11 +862,14 @@ function Sidebar({ poleCount, searchEnabled, onSearch, onClearSearch }) {
               WORKSPACE DE ENGENHARIA
             </span>
             <h2 className="project__name">
-              Expansão Campinas - Lote 1
+              {projectName || "Carregando projeto..."}
             </h2>
             <span className="project__badge">
               Rascunho
             </span>
+            <Link className="mt-2 text-xs text-blue-600 hover:underline" to="/projetos">
+              ← Voltar aos projetos
+            </Link>
           </div>
         </div>
         <div className="divider-horizontal" />
@@ -1006,8 +1019,10 @@ function Sidebar({ poleCount, searchEnabled, onSearch, onClearSearch }) {
           <button
             type="button"
             className="primary-button"
+            onClick={onCalculate}
+            disabled={!canCalculate || isCalculating}
           >
-            Calcular Malha Otimizada ⚡
+            {isCalculating ? "Calculando..." : "Calcular Malha Otimizada ⚡"}
           </button>
         </footer>
       </div>
@@ -1022,7 +1037,7 @@ function Sidebar({ poleCount, searchEnabled, onSearch, onClearSearch }) {
 const STATUS_LABELS = {
   loading: "Carregando Google Maps…",
   ready: "Google Maps · conectado · Busca: © OpenStreetMap e ViaCEP",
-  error: "Mapa indisponível · verifique a chave da API",
+  error: "Mapa indisponível · veja a mensagem de erro no mapa",
 };
 
 function isTypingTarget(target) {
@@ -1034,6 +1049,10 @@ function isTypingTarget(target) {
 }
 
 export const WorkspaceGis = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const session = getSession();
+  const projectId = Number(searchParams.get("id_projeto"));
   const [map, setMap] = useState(null);
   const [status, setStatus] = useState("loading");
   const [view, setView] = useState({ zoom: DEFAULT_ZOOM, lat: MAP_CENTER.lat });
@@ -1042,31 +1061,114 @@ export const WorkspaceGis = () => {
   const [poles, setPoles] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
   const [searchResult, setSearchResult] = useState(null);
-  const nextPoleNumber = useRef(1);
+  const [project, setProject] = useState(null);
+  const [distanceMeters, setDistanceMeters] = useState(0);
+  const [estimatedCost, setEstimatedCost] = useState(0);
+  const [requestError, setRequestError] = useState("");
+  const [isCalculating, setIsCalculating] = useState(false);
+
+  useEffect(() => {
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      navigate("/projetos", { replace: true });
+      return;
+    }
+
+    let cancelled = false;
+    const loadProject = async () => {
+      setRequestError("");
+      try {
+        const result = await apiRequest(
+          `/projetos/${projectId}?id_usuario_autor=${session.id_usuario}`,
+        );
+        if (cancelled) return;
+        setProject(result);
+        setDistanceMeters(result.metragem_total);
+        setEstimatedCost(result.custo_estimado);
+        setPoles(
+          result.pontos
+            .filter((point) => point.status_ponto === "Ativo")
+            .map((point) => ({
+              id: point.id_ponto,
+              name: point.descricao,
+              lat: point.latitude,
+              lng: point.longitude,
+            })),
+        );
+      } catch (error) {
+        if (!cancelled) setRequestError(error.message);
+      }
+    };
+
+    loadProject();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, session.id_usuario, navigate]);
+
+  useEffect(() => {
+    if (!map || !project?.pontos.length) return;
+    const firstPoint = project.pontos[0];
+    map.setCenter({ lat: firstPoint.latitude, lng: firstPoint.longitude });
+  }, [map, project]);
 
   const selectTool = useCallback((toolId) => {
     setTool(toolId);
     if (toolId !== "select") setSelectedIds([]);
   }, []);
 
-  const addPole = useCallback(({ lat, lng }) => {
-    const number = nextPoleNumber.current++;
-    setPoles((current) => [
-      ...current,
-      {
-        id: `pole-${number}`,
-        name: `Poste ${String(number).padStart(3, "0")}`,
-        lat,
-        lng,
-      },
-    ]);
-  }, []);
+  const addPole = useCallback(async ({ lat, lng }) => {
+    if (!project) return;
+    setRequestError("");
+    try {
+      const point = await apiRequest(`/projetos/${projectId}/pontos`, {
+        method: "POST",
+        body: JSON.stringify({
+          descricao: `Ponto ${poles.length + 1}`,
+          latitude: lat,
+          longitude: lng,
+          status_fisico: "Projetado",
+          id_usuario_autor: session.id_usuario,
+        }),
+      });
+      setPoles((current) => [
+        ...current,
+        {
+          id: point.id_ponto,
+          name: point.descricao,
+          lat: point.latitude,
+          lng: point.longitude,
+        },
+      ]);
+    } catch (error) {
+      setRequestError(error.message);
+    }
+  }, [poles.length, project, projectId, session.id_usuario]);
 
-  const movePole = useCallback((id, { lat, lng }) => {
+  const movePole = useCallback(async (id, { lat, lng }) => {
+    const previousPosition = poles.find((pole) => pole.id === id);
+    if (!previousPosition) return;
     setPoles((current) =>
       current.map((pole) => (pole.id === id ? { ...pole, lat, lng } : pole)),
     );
-  }, []);
+    setRequestError("");
+    try {
+      await apiRequest(`/projetos/${projectId}/pontos/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          latitude: lat,
+          longitude: lng,
+          id_usuario_autor: session.id_usuario,
+        }),
+      });
+    } catch (error) {
+      setPoles((current) => current.map((pole) => (
+        pole.id === id
+          ? { ...pole, lat: previousPosition.lat, lng: previousPosition.lng }
+          : pole
+      )));
+      setRequestError(error.message);
+    }
+  }, [poles, projectId, session.id_usuario]);
 
   const selectPole = useCallback((id, additive) => {
     setSelectedIds((current) => {
@@ -1078,6 +1180,55 @@ export const WorkspaceGis = () => {
   }, []);
 
   const clearSelection = useCallback(() => setSelectedIds([]), []);
+
+  const removeSelectedPoles = useCallback(async (ids) => {
+    setRequestError("");
+    try {
+      await Promise.all(ids.map((id) => apiRequest(
+        `/projetos/${projectId}/pontos/${id}/soft-delete`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            novo_status_ponto: "Removido",
+            forcar_recalculo_mst: true,
+            id_usuario_autor: session.id_usuario,
+          }),
+        },
+      )));
+      const result = await apiRequest(
+        `/projetos/${projectId}/mst?id_usuario_autor=${session.id_usuario}`,
+        { method: "POST", body: "null" },
+      );
+      setDistanceMeters(result.metragem_total);
+      setEstimatedCost(result.custo_estimado);
+      setPoles((current) => current.filter((pole) => !ids.includes(pole.id)));
+      setSelectedIds([]);
+    } catch (error) {
+      setRequestError(error.message);
+    }
+  }, [projectId, session.id_usuario]);
+
+  const calculateTopology = useCallback(async () => {
+    setIsCalculating(true);
+    setRequestError("");
+    try {
+      const result = await apiRequest(
+        `/projetos/${projectId}/mst?id_usuario_autor=${session.id_usuario}`,
+        { method: "POST", body: "null" },
+      );
+      setDistanceMeters(result.metragem_total);
+      setEstimatedCost(result.custo_estimado);
+      setProject((current) => current ? {
+        ...current,
+        metragem_total: result.metragem_total,
+        custo_estimado: result.custo_estimado,
+      } : current);
+    } catch (error) {
+      setRequestError(error.message);
+    } finally {
+      setIsCalculating(false);
+    }
+  }, [projectId, session.id_usuario]);
 
   const searchAddress = useCallback(
     async (query) => {
@@ -1182,16 +1333,13 @@ export const WorkspaceGis = () => {
         setTool("select");
       } else if ((key === "delete" || key === "backspace") && selectedIds.length) {
         event.preventDefault();
-        setPoles((current) =>
-          current.filter((pole) => !selectedIds.includes(pole.id)),
-        );
-        setSelectedIds([]);
+        removeSelectedPoles(selectedIds);
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedIds, selectTool]);
+  }, [selectedIds, selectTool, removeSelectedPoles]);
 
   return (
     <main
@@ -1227,7 +1375,11 @@ export const WorkspaceGis = () => {
         {status === "ready" && (
           <ToolHint tool={tool} selectedCount={selectedIds.length} />
         )}
-        <MapStats poleCount={poles.length} />
+        <MapStats
+          poleCount={poles.length}
+          distanceMeters={distanceMeters}
+          estimatedCost={estimatedCost}
+        />
         <MapControls
           zoomLevel={view.zoom}
           onZoomIn={() => zoomBy(1)}
@@ -1243,7 +1395,14 @@ export const WorkspaceGis = () => {
         searchEnabled={status === "ready"}
         onSearch={searchAddress}
         onClearSearch={clearSearch}
+        projectName={project?.nome}
+        canCalculate={Boolean(project)}
+        onCalculate={calculateTopology}
+        isCalculating={isCalculating}
       />
+      {requestError && (
+        <p className="workspace__status" role="alert">{requestError}</p>
+      )}
     </main>
   );
 };

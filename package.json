@@ -2,6 +2,7 @@
   "name": "infraroute-workspace",
   "private": true,
   "scripts": {
-    "dev": "npm --prefix ./infraroute run dev"
+    "dev": "npm --prefix ./infraroute run dev",
+    "dev:backend": "npm --prefix ./infraroute run dev:backend"
   }
 }

@@ -1,4 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { apiRequest, getSession } from "../../../lib/api";
 import { Icon, Icon1, Icon2, Icon3, Icon4, Icon5, Icon6, Icon7, Icon8, IconComponentNode } from "./icons/ActionIcons";
 import collaborators from "../assets/collaborators.svg";
 import collaborators2 from "../assets/collaborators-2.svg";
@@ -66,7 +68,7 @@ import status8 from "../assets/status-8.svg";
 import status9 from "../assets/status-9.svg";
 import status10 from "../assets/status-10.svg";
 
-const projects = [
+const projectArtwork = [
   {
     name: "Projeto Campinas",
     code: "OSP-0268 · Campinas / SP",
@@ -205,17 +207,51 @@ const calendarIcons = [
 const headerColumns = [
   { label: "Nome", className: "min-w-[172px]" },
   { label: "Status", className: "min-w-[120px]" },
-  { label: "Proprietário/Empresa", className: "min-w-36" },
-  { label: "Colaboradores", className: "min-w-[104px]" },
-  { label: "Tipo de Projeto\n(Objetivo)", className: "min-w-36" },
-  { label: "Data de Início /\nPrazo Final", className: "min-w-[156px]" },
+  { label: "Empresa", className: "min-w-36" },
+  { label: "Equipe", className: "min-w-[104px]" },
+  { label: "Tipo de Projeto", className: "min-w-36" },
+  { label: "Custo / Metragem", className: "min-w-[156px]" },
   { label: "Ações", className: "min-w-9" },
 ];
 
 export const CurrentProjectsSection = () => {
+  const navigate = useNavigate();
+  const session = getSession();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState([]);
   const [page, setPage] = useState(1);
+  const [projects, setProjects] = useState([]);
+  const [projectName, setProjectName] = useState("");
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
+
+  const loadProjects = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await apiRequest(
+        `/projetos?id_empresa=${session.id_empresa_padrao}&id_usuario_autor=${session.id_usuario}`,
+      );
+      setProjects(
+        response.map((project, index) => ({
+          ...project,
+          name: project.nome,
+          code: `IR-${String(project.id_projeto).padStart(4, "0")}`,
+          artwork: projectArtwork[index % projectArtwork.length],
+        })),
+      );
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadProjects();
+  }, []);
 
   const filteredProjects = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -227,7 +263,7 @@ export const CurrentProjectsSection = () => {
     return projects.filter((project) =>
       `${project.name} ${project.code}`.toLowerCase().includes(normalizedQuery),
     );
-  }, [query]);
+  }, [projects, query]);
 
   const allSelected =
     filteredProjects.length > 0 &&
@@ -263,6 +299,34 @@ export const CurrentProjectsSection = () => {
     setQuery("");
     setSelected([]);
     setPage(1);
+    loadProjects();
+  };
+
+  const createProject = async (event) => {
+    event.preventDefault();
+    const nome = projectName.trim();
+    if (!nome) return;
+
+    setIsCreating(true);
+    setError("");
+    try {
+      await apiRequest("/projetos", {
+        method: "POST",
+        body: JSON.stringify({
+          nome,
+          id_empresa: session.id_empresa_padrao,
+          id_engenheiro: session.id_usuario,
+          id_usuario_autor: session.id_usuario,
+        }),
+      });
+      setProjectName("");
+      setShowCreateForm(false);
+      await loadProjects();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   return (
@@ -330,6 +394,7 @@ export const CurrentProjectsSection = () => {
             </button>
             <button
               type="button"
+              onClick={() => setShowCreateForm(true)}
               className="inline-flex h-12 items-center justify-center gap-2.5 px-6 py-3 relative flex-[0_0_auto] bg-blue-600 rounded-lg"
             >
               <span className="text-white relative w-fit mt-[-1.00px] [font-family:'Inter-SemiBold',Helvetica] font-semibold text-sm text-center tracking-[0] leading-6 whitespace-nowrap">
@@ -375,19 +440,26 @@ export const CurrentProjectsSection = () => {
                 </div>
               ))}
             </div>
-            {filteredProjects.map((project, index) => {
-              const ActionIcon = project.action;
+            {loading ? (
+              <p className="p-6 text-sm text-slate-600">Carregando projetos...</p>
+            ) : error && projects.length === 0 ? (
+              <p className="p-6 text-sm text-red-600" role="alert">{error}</p>
+            ) : filteredProjects.length === 0 ? (
+              <p className="p-6 text-sm text-slate-600">Nenhum projeto encontrado.</p>
+            ) : filteredProjects.map((project, index) => {
+              const ActionIcon = project.artwork.action;
               const calendarIcon = calendarIcons[index];
 
               return (
                 <div
                   role="row"
-                  key={project.code}
+                  key={project.id_projeto}
                   className="flex h-14 items-center gap-3 px-4 py-0 relative self-stretch w-full bg-white border-b [border-bottom-style:solid] border-slate-200"
                 >
                   <div className="flex min-w-6 items-center gap-2 relative flex-1 grow">
                     <input
                       type="checkbox"
+                      checked={selected.includes(project.code)}
                       onChange={() => toggleProject(project.code)}
                       aria-label={`Selecionar ${project.name}`}
                       className="relative w-4 h-4 rounded border border-solid border-slate-300 accent-blue-600"
@@ -398,38 +470,26 @@ export const CurrentProjectsSection = () => {
                       <img
                         className="absolute w-[96.39%] h-[92.22%] top-[7.78%] left-[3.61%]"
                         alt=""
-                        src={project.folder}
+                        src={project.artwork.folder}
                       />
                     </div>
                     <div className="flex flex-col items-start gap-1 relative flex-1 grow min-w-0">
-                      <span className="relative self-stretch mt-[-1.00px] [font-family:'Inter-SemiBold',Helvetica] font-semibold text-slate-900 text-xs tracking-[0] leading-4 truncate">
+                      <button
+                        type="button"
+                        className="relative self-stretch mt-[-1.00px] text-left [font-family:'Inter-SemiBold',Helvetica] font-semibold text-slate-900 text-xs tracking-[0] leading-4 truncate"
+                        onClick={() => navigate(`/workspace?id_projeto=${project.id_projeto}`)}
+                      >
                         {project.name}
-                      </span>
+                      </button>
                       <span className="relative self-stretch [font-family:'Inter-Regular',Helvetica] font-normal text-slate-600 text-[10px] tracking-[0] leading-[14px] truncate">
-                        {project.code}
+                        {project.code} · {project.metragem_total.toFixed(0)} m
                       </span>
                     </div>
                   </div>
-                  <img
-                    className="min-w-[120px] relative flex-1 grow"
-                    alt=""
-                    src={project.status}
-                  />
-                  <img
-                    className="relative flex-1 min-w-36 grow h-7"
-                    alt=""
-                    src={project.owner}
-                  />
-                  <img
-                    className="h-7 min-w-[104px] relative flex-1 grow"
-                    alt=""
-                    src={project.collaborators}
-                  />
-                  <img
-                    className="relative flex-1 min-w-36 grow h-[22px]"
-                    alt=""
-                    src={project.objective}
-                  />
+                  <span className="min-w-[120px] flex-1 text-xs text-slate-700">{project.status}</span>
+                  <span className="min-w-36 flex-1 truncate text-xs text-slate-700">{session.razao_social_empresa}</span>
+                  <span className="min-w-[104px] flex-1 text-xs text-slate-500">—</span>
+                  <span className="min-w-36 flex-1 text-xs text-slate-700">Expansão OSP</span>
                   <div className="flex min-w-[156px] items-center gap-2 relative flex-1 grow">
                     <div className="relative w-[15px] h-[15px]">
                       <img
@@ -440,10 +500,10 @@ export const CurrentProjectsSection = () => {
                     </div>
                     <div className="inline-flex flex-col items-start gap-1 relative flex-[0_0_auto]">
                       <span className="relative w-fit mt-[-1.00px] [font-family:'Inter-Regular',Helvetica] font-normal text-slate-600 text-[11px] tracking-[0] leading-[14px] whitespace-nowrap">
-                        {project.start}
+                        {project.custo_estimado.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                       </span>
                       <span className="relative w-fit [font-family:'Inter-Regular',Helvetica] font-normal text-slate-900 text-[11px] tracking-[0] leading-[14px] whitespace-nowrap">
-                        {project.end}
+                        {project.metragem_total.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} m
                       </span>
                     </div>
                   </div>
@@ -463,7 +523,7 @@ export const CurrentProjectsSection = () => {
         </div>
         <div className="flex h-14 items-center justify-between px-4 py-0 relative self-stretch w-full bg-white rounded-lg overflow-hidden border border-solid border-slate-200 shadow-[0px_4px_16px_#0f172a0d]">
           <p className="relative w-fit [font-family:'Inter-Regular',Helvetica] font-normal text-slate-600 text-xs tracking-[0] leading-[normal]">
-            Exibindo 1-10 de 48 projetos
+            Exibindo {filteredProjects.length} de {projects.length} projetos
           </p>
           <nav
             aria-label="Paginação"
@@ -542,6 +602,47 @@ export const CurrentProjectsSection = () => {
           InfraRoute / Engenharia de redes
         </p>
       </footer>
+      {error && projects.length > 0 && (
+        <p className="text-sm text-red-600" role="alert">{error}</p>
+      )}
+      {showCreateForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <form
+            className="w-full max-w-md space-y-4 rounded-xl bg-white p-6 shadow-xl"
+            onSubmit={createProject}
+          >
+            <h2 className="text-xl font-semibold text-slate-900">Criar projeto</h2>
+            <label className="block space-y-2 text-sm font-medium text-slate-700">
+              Nome do projeto
+              <input
+                autoFocus
+                required
+                minLength={1}
+                value={projectName}
+                onChange={(event) => setProjectName(event.target.value)}
+                className="h-11 w-full rounded-lg border border-slate-300 px-3"
+              />
+            </label>
+            {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm"
+                onClick={() => setShowCreateForm(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isCreating}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {isCreating ? "Criando..." : "Criar"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </main>
   );
 };

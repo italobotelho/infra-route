@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { apiRequest, saveSession } from "../../lib/api";
 
 const fields = [
   {
@@ -8,27 +10,21 @@ const fields = [
     placeholder: "nome@empresa.com",
   },
   {
-    id: "password",
+    id: "senha",
     label: "Senha de Acesso",
     type: "password",
     placeholder: "Digite sua senha",
   },
-  {
-    id: "crea",
-    label: "Registro CREA Profissional",
-    type: "text",
-    placeholder: "Ex.: 1234567890",
-    helperText: "Obrigatório para assinatura de projetos OSP",
-  },
 ];
 
 export const CanvasBackground = () => {
+  const navigate = useNavigate();
   const [formValues, setFormValues] = useState({
     email: "",
-    password: "",
-    crea: "",
+    senha: "",
   });
   const [message, setMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleChange = (event) => {
     const { id, value } = event.target;
@@ -43,7 +39,7 @@ export const CanvasBackground = () => {
     }
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
 
     if (!event.currentTarget.checkValidity()) {
@@ -51,11 +47,19 @@ export const CanvasBackground = () => {
       return;
     }
 
-    setMessage("Dados preenchidos. O acesso será validado.");
-  };
-
-  const handleRequestAccess = () => {
-    setMessage("Sua solicitação de acesso foi registrada.");
+    setIsSubmitting(true);
+    try {
+      const session = await apiRequest("/auth/login", {
+        method: "POST",
+        body: JSON.stringify(formValues),
+      });
+      saveSession(session);
+      navigate("/projetos", { replace: true });
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -151,19 +155,22 @@ export const CanvasBackground = () => {
               <button
                 className="all-unset box-border flex min-h-12 items-center justify-center gap-2.5 px-6 py-3 relative self-stretch w-full flex-[0_0_auto] bg-blue-600 rounded-lg text-white text-center leading-6 [font-family:'Inter-SemiBold',Helvetica] font-semibold text-sm tracking-[0] whitespace-nowrap cursor-pointer hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                 type="submit"
+                disabled={isSubmitting}
               >
-                Login
-              </button>
-              <button
-                className="all-unset box-border flex min-h-12 items-center justify-center gap-2.5 px-6 py-3 relative self-stretch w-full flex-[0_0_auto] bg-white rounded-lg border border-solid border-slate-300 text-blue-700 text-center leading-6 [font-family:'Inter-SemiBold',Helvetica] font-semibold text-sm tracking-[0] whitespace-nowrap cursor-pointer hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-                type="button"
-                onClick={handleRequestAccess}
-              >
-                Solicitar acesso
+                {isSubmitting ? "Entrando..." : "Login"}
               </button>
             </div>
-            <p className="sr-only" aria-live="polite">
+            <p className="text-sm text-red-600" role="alert" aria-live="polite">
               {message}
+            </p>
+            <p className="text-sm text-slate-600">
+              Ainda não tem uma conta?{" "}
+              <Link className="font-semibold text-blue-700 hover:underline" to="/cadastro">
+                Criar conta
+              </Link>
+            </p>
+            <p className="text-xs text-slate-500">
+              Demonstração: engenheiro@empresa.com.br / 123456
             </p>
           </form>
         </div>

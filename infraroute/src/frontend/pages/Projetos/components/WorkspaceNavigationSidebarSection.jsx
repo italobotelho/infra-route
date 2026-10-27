@@ -1,3 +1,5 @@
+import { useNavigate } from "react-router-dom";
+import { clearSession, getSession } from "../../../lib/api";
 import { Default } from "./icons/Default";
 import default24 from "../assets/default-24.svg";
 import default25 from "../assets/default-25.svg";
@@ -51,6 +53,18 @@ const renderNavigationIcon = (item) => {
 };
 
 export const WorkspaceNavigationSidebarSection = () => {
+  const navigate = useNavigate();
+  const session = getSession();
+
+  const handleNavigation = (label) => {
+    if (label === "Projetos") navigate("/projetos");
+  };
+
+  const handleLogout = () => {
+    clearSession();
+    navigate("/login", { replace: true });
+  };
+
   return (
     <aside
       className="flex flex-col w-[260px] items-start justify-between pt-8 pb-6 px-4 relative self-stretch bg-slate-900"
@@ -87,6 +101,7 @@ export const WorkspaceNavigationSidebarSection = () => {
             <button
               key={item.label}
               type="button"
+              onClick={() => handleNavigation(item.label)}
               aria-current={item.active ? "page" : undefined}
               className={
                 item.active
@@ -146,10 +161,10 @@ export const WorkspaceNavigationSidebarSection = () => {
             </div>
             <div className="flex flex-col items-start gap-1 relative flex-1 grow">
               <div className="relative w-fit mt-[-1.00px] [font-family:'Inter-SemiBold',Helvetica] font-semibold text-slate-50 text-[13px] tracking-[0] leading-[normal]">
-                Eng. Ednaldo pereira
+                {session.nome}
               </div>
               <div className="text-slate-300 relative w-fit [font-family:'Inter-Regular',Helvetica] font-normal text-[11px] tracking-[0] leading-[normal] whitespace-nowrap">
-                Engenheiro de telecom
+                {session.nivel_acesso}
               </div>
             </div>
           </div>
@@ -162,9 +177,16 @@ export const WorkspaceNavigationSidebarSection = () => {
               />
             </span>
             <div className="text-slate-300 relative w-fit [font-family:'Inter-Regular',Helvetica] font-normal text-[11px] tracking-[0] leading-[normal] whitespace-nowrap">
-              CREA-SP 0000000000 · Exemplo
+              {session.crea ? `CREA ${session.crea}` : "Sem CREA cadastrado"}
             </div>
           </div>
+          <button
+            type="button"
+            className="text-xs text-slate-300 hover:text-white"
+            onClick={handleLogout}
+          >
+            Sair
+          </button>
         </section>
       </div>
     </aside>
