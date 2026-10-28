@@ -8,6 +8,8 @@ todas as operações consumidas pelas telas `login.html` e `index.html`.
 
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
+import json
+from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 from backend.services.exceptions import (
@@ -47,6 +49,7 @@ from backend.services.prim_service import (
     TipoCabo,
     TipoEquipamento,
     TrechoRedeMST,
+    gerar_arestas_candidatas_viarias,
 )
 
 
@@ -85,8 +88,72 @@ class WorkspaceStoreService:
     e cálculo da Árvore Geradora Mínima (Algoritmo de Prim).
     """
 
-    def __init__(self) -> None:
+    _ARQUIVO_DEV_USUARIOS = Path(".cache/dev_users.json")
+
+    def __init__(self, persistir_arquivo: bool = False) -> None:
+        self._persistir_arquivo = persistir_arquivo
         self.resetar_estado_padrao()
+        if self._persistir_arquivo:
+            self._carregar_usuarios_dev()
+
+    def _salvar_usuarios_dev(self) -> None:
+        if not self._persistir_arquivo:
+            return
+        try:
+            self._ARQUIVO_DEV_USUARIOS.parent.mkdir(parents=True, exist_ok=True)
+            registros = []
+            for uid, usr in self.usuarios.items():
+                if uid <= 2:
+                    continue
+                registros.append(
+                    {
+                        "id_usuario": usr.id_usuario,
+                        "nome": usr.nome,
+                        "cpf": usr.cpf,
+                        "telefone": usr.telefone,
+                        "email": usr.email,
+                        "crea": usr.crea,
+                        "senha_hash": self._senhas_usuarios.get(uid, ""),
+                        "email_verificado": self._emails_verificados.get(uid, False),
+                    }
+                )
+            self._ARQUIVO_DEV_USUARIOS.write_text(
+                json.dumps(registros, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+
+    def _carregar_usuarios_dev(self) -> None:
+        if not self._persistir_arquivo or not self._ARQUIVO_DEV_USUARIOS.exists():
+            return
+        try:
+            dados = json.loads(self._ARQUIVO_DEV_USUARIOS.read_text(encoding="utf-8"))
+            for item in dados:
+                uid = int(item["id_usuario"])
+                if uid in self.usuarios:
+                    continue
+                usr = Usuario(
+                    id_usuario=uid,
+                    nome=item["nome"],
+                    cpf=item["cpf"],
+                    telefone=item["telefone"],
+                    email=item["email"],
+                    crea=item.get("crea"),
+                )
+                vinculo = VinculoCorporate(
+                    id_usuario=uid,
+                    id_empresa=1,
+                    nivel_acesso=NivelAcessoRBAC.PROJETISTA,
+                )
+                self.usuarios[uid] = usr
+                self._senhas_usuarios[uid] = item["senha_hash"]
+                self._emails_verificados[uid] = bool(item.get("email_verificado", False))
+                self.vinculos.append(vinculo)
+                self.governanca.usuarios[uid] = usr
+                self.governanca.vinculos[(uid, 1)] = vinculo
+        except Exception:
+            pass
 
     def resetar_estado_padrao(self) -> None:
         """Restaura o estado inicial alinhado ao `database/seed.sql` e `index.html`."""
@@ -264,7 +331,11 @@ class WorkspaceStoreService:
 
         # Executa o cálculo inicial da MST para popular Metragem_Total e Custo_Estimado (Memoização)
         for id_proj in (1, 2):
-            self.recalcular_mst_projeto(id_projeto=id_proj, id_usuario_autor=1)
+            self.recalcular_mst_projeto(
+                id_projeto=id_proj,
+                id_usuario_autor=1,
+                ajustar_malha_viaria=self._persistir_arquivo,
+            )
 
     def _registrar_evento_auditoria(
         self,
@@ -307,6 +378,13 @@ class WorkspaceStoreService:
             if usr.email.strip().lower() == email_norm:
                 usuario_encontrado = usr
                 break
+
+        if usuario_encontrado is None and self._persistir_arquivo:
+            self._carregar_usuarios_dev()
+            for usr in self.usuarios.values():
+                if usr.email.strip().lower() == email_norm:
+                    usuario_encontrado = usr
+                    break
 
         if usuario_encontrado is None:
             # Executa verificação dummy em tempo constante para mitigar enumeração por timing
@@ -383,6 +461,9 @@ class WorkspaceStoreService:
     def validar_token_sessao(self, token: str) -> SessaoAutenticada:
         payload = decodificar_token_acesso(token)
         usuario = self.usuarios.get(payload.id_usuario)
+        if usuario is None and self._persistir_arquivo:
+            self._carregar_usuarios_dev()
+            usuario = self.usuarios.get(payload.id_usuario)
         if usuario is None:
             raise NaoAutenticadoError("Usuário associado ao token não existe mais.")
         return self._construir_sessao_usuario(usuario)
@@ -410,6 +491,7 @@ class WorkspaceStoreService:
             raise ValidacaoDominioError("Código de verificação inválido.")
 
         self._emails_verificados[usuario.id_usuario] = True
+        self._salvar_usuarios_dev()
         self._registrar_evento_auditoria(
             acao="EMAIL_VERIFICADO",
             id_usuario=usuario.id_usuario,
@@ -481,6 +563,7 @@ class WorkspaceStoreService:
         self.vinculos.append(vinculo)
         self.governanca.usuarios[novo_id] = usuario
         self.governanca.vinculos[(novo_id, 1)] = vinculo
+        self._salvar_usuarios_dev()
 
         self._registrar_evento_auditoria(
             acao="CADASTRO_USUARIO",
@@ -611,6 +694,8 @@ class WorkspaceStoreService:
         id_usuario_autor: int = 1,
         no_inicial_id: Optional[int] = None,
         arestas_candidatas: Optional[Sequence[ArestaCandidata]] = None,
+        catalogo_cabos: Optional[Sequence[TipoCabo]] = None,
+        ajustar_malha_viaria: bool = False,
     ) -> ResultadoMSTProjeto:
         projeto = self.obter_projeto(id_projeto=id_projeto, id_usuario_autor=id_usuario_autor)
         self.governanca.validar_acesso_tenant(
@@ -620,13 +705,24 @@ class WorkspaceStoreService:
         )
 
         pontos = self.pontos_por_projeto.get(id_projeto, [])
+        cabos_ativos = (
+            list(catalogo_cabos)
+            if catalogo_cabos
+            else list(self.catalogo_cabos.values())
+        )
         grafo = GrafoTopologicoOptico(
             id_projeto=id_projeto,
             pontos=pontos,
-            catalogo_cabos=list(self.catalogo_cabos.values()),
+            catalogo_cabos=cabos_ativos,
             catalogo_equipamentos=list(self.catalogo_equipamentos.values()),
         )
-        grafo.construir_lista_adjacencia(arestas_candidatas=arestas_candidatas)
+        arestas_efetivas = arestas_candidatas
+        if arestas_efetivas is None and ajustar_malha_viaria:
+            arestas_efetivas = gerar_arestas_candidatas_viarias(
+                pontos=pontos,
+                limite_max_metros=grafo.maior_limite_cabo_metros,
+            )
+        grafo.construir_lista_adjacencia(arestas_candidatas=arestas_efetivas)
         resultado = grafo.extrair_mst_prim(no_inicial_id=no_inicial_id)
 
         projeto_atualizado = self.governanca.atualizar_memoizacao_projeto(
@@ -679,4 +775,4 @@ class WorkspaceStoreService:
         return ponto_atualizado
 
 
-workspace_store = WorkspaceStoreService()
+workspace_store = WorkspaceStoreService(persistir_arquivo=True)

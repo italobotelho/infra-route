@@ -22,6 +22,7 @@ from backend.services.prim_service import (
     PontoRede,
     TipoCabo,
     TipoEquipamento,
+    gerar_arestas_candidatas_viarias,
 )
 
 router = APIRouter(
@@ -76,21 +77,10 @@ def calcular_mst_projeto(
                 ]
                 for id_no, adjs in resultado.lista_adjacencia.items()
             },
+            metragem_malha_candidata=resultado.metragem_malha_candidata,
+            economia_percentual=resultado.economia_percentual,
         )
 
-    pontos = [
-        PontoRede(
-            id_ponto=p.id_ponto,
-            descricao=p.descricao,
-            latitude=p.latitude,
-            longitude=p.longitude,
-            status_fisico=p.status_fisico.value,
-            status_ponto=p.status_ponto.value,
-            id_tipo_equipamento=p.id_tipo_equipamento,
-            custo_equipamento=p.custo_equipamento,
-        )
-        for p in payload.pontos
-    ]
     cabos = [
         TipoCabo(
             id_cabo=c.id_cabo,
@@ -100,19 +90,6 @@ def calcular_mst_projeto(
         )
         for c in payload.catalogo_cabos
     ]
-    equipamentos = (
-        [
-            TipoEquipamento(
-                id_tipo_equipamento=eq.id_tipo_equipamento,
-                categoria=eq.categoria.value,
-                fabricante=eq.fabricante.value,
-                custo_unitario=eq.custo_unitario,
-            )
-            for eq in payload.catalogo_equipamentos
-        ]
-        if payload.catalogo_equipamentos is not None
-        else None
-    )
     arestas = (
         [
             ArestaCandidata(
@@ -132,13 +109,80 @@ def calcular_mst_projeto(
         else None
     )
 
+    if payload.pontos is None:
+        resultado = workspace_store.recalcular_mst_projeto(
+            id_projeto=id_projeto,
+            id_usuario_autor=autor_id,
+            no_inicial_id=payload.no_inicial_id,
+            arestas_candidatas=arestas,
+            catalogo_cabos=cabos,
+            ajustar_malha_viaria=payload.ajustar_malha_viaria,
+        )
+        return ResultadoMSTProjetoSchema(
+            id_projeto=resultado.id_projeto,
+            nos_ativos_processados=resultado.nos_ativos_processados,
+            grafo_conexo=resultado.grafo_conexo,
+            metragem_total=resultado.metragem_total,
+            custo_estimado=resultado.custo_estimado,
+            custo_total_cabos=resultado.custo_total_cabos,
+            custo_total_equipamentos=resultado.custo_total_equipamentos,
+            trechos_mst=[asdict(t) for t in resultado.trechos_mst],
+            lista_adjacencia={
+                id_no: [
+                    VizinhoAdjacenciaSchema(
+                        destino_id=a.destino_id,
+                        distancia_metros=a.distancia_metros,
+                        id_tipo_cabo=a.id_tipo_cabo,
+                        descricao_cabo=a.modelo_cabo,
+                        custo_trecho=a.custo_trecho,
+                    )
+                    for a in adjs
+                ]
+                for id_no, adjs in resultado.lista_adjacencia.items()
+            },
+            metragem_malha_candidata=resultado.metragem_malha_candidata,
+            economia_percentual=resultado.economia_percentual,
+        )
+
+    pontos = [
+        PontoRede(
+            id_ponto=p.id_ponto,
+            descricao=p.descricao,
+            latitude=p.latitude,
+            longitude=p.longitude,
+            status_fisico=p.status_fisico.value,
+            status_ponto=p.status_ponto.value,
+            id_tipo_equipamento=p.id_tipo_equipamento,
+            custo_equipamento=p.custo_equipamento,
+        )
+        for p in payload.pontos
+    ]
+    equipamentos = (
+        [
+            TipoEquipamento(
+                id_tipo_equipamento=eq.id_tipo_equipamento,
+                categoria=eq.categoria.value,
+                fabricante=eq.fabricante.value,
+                custo_unitario=eq.custo_unitario,
+            )
+            for eq in payload.catalogo_equipamentos
+        ]
+        if payload.catalogo_equipamentos is not None
+        else None
+    )
+
     grafo = GrafoTopologicoOptico(
         id_projeto=id_projeto,
         pontos=pontos,
         catalogo_cabos=cabos,
         catalogo_equipamentos=equipamentos,
     )
-    grafo.construir_lista_adjacencia(arestas_candidatas=arestas)
+    arestas_efetivas = (
+        gerar_arestas_candidatas_viarias(pontos=pontos, limite_max_metros=grafo.maior_limite_cabo_metros)
+        if arestas is None and payload.ajustar_malha_viaria
+        else arestas
+    )
+    grafo.construir_lista_adjacencia(arestas_candidatas=arestas_efetivas)
     resultado = grafo.extrair_mst_prim(no_inicial_id=payload.no_inicial_id)
 
     return ResultadoMSTProjetoSchema(
@@ -163,4 +207,6 @@ def calcular_mst_projeto(
             ]
             for id_no, adjs in resultado.lista_adjacencia.items()
         },
+        metragem_malha_candidata=resultado.metragem_malha_candidata,
+        economia_percentual=resultado.economia_percentual,
     )

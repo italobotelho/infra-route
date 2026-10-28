@@ -11,7 +11,12 @@ from backend.services.exceptions import (
     ViolacaoIntegridadeTopologicaError,
     ViolacaoMultiTenantError,
 )
-from backend.services.prim_service import StatusPontoProjeto
+from backend.services.prim_service import (
+    ArestaCandidata,
+    CoordenadaLatLng,
+    StatusPontoProjeto,
+    TipoCabo,
+)
 from backend.services.workspace_store import WorkspaceStoreService
 
 
@@ -145,6 +150,64 @@ class TestWorkspaceFluxoCompleto(unittest.TestCase):
                 longitude=-46.985,
                 id_usuario_autor=2,
             )
+
+    def test_04_metricas_economia_e_polilinhas_viarias_customizadas(self) -> None:
+        p3 = self.store.adicionar_ponto_rede(
+            id_projeto=1,
+            descricao="CTO #103",
+            latitude=-22.7062,
+            longitude=-46.9838,
+            id_tipo_equipamento=1,
+            id_usuario_autor=1,
+        )
+        # Fase 1: Cálculo geodésico com 3 nós (triângulo) -> deve apresentar economia > 0%
+        res_geodesico = self.store.recalcular_mst_projeto(id_projeto=1, id_usuario_autor=1)
+        self.assertGreater(res_geodesico.metragem_malha_candidata, res_geodesico.metragem_total)
+        self.assertGreater(res_geodesico.economia_percentual, 30.0)
+
+        # Fase 2: Refinamento viário (Snap ON) com polilinhas sinuosas e catálogo customizado
+        arestas_viarias = [
+            ArestaCandidata(
+                origem_id=101,
+                destino_id=102,
+                caminho_coordenadas=(
+                    CoordenadaLatLng(lat=-22.7045, lng=-46.9852),
+                    CoordenadaLatLng(lat=-22.7050, lng=-46.9852),
+                    CoordenadaLatLng(lat=-22.7054, lng=-46.9845),
+                ),
+            ),
+            ArestaCandidata(
+                origem_id=102,
+                destino_id=p3.id_ponto,
+                caminho_coordenadas=(
+                    CoordenadaLatLng(lat=-22.7054, lng=-46.9845),
+                    CoordenadaLatLng(lat=-22.7060, lng=-46.9845),
+                    CoordenadaLatLng(lat=-22.7062, lng=-46.9838),
+                ),
+            ),
+        ]
+        cabo_custom = [
+            TipoCabo(
+                id_cabo=1,
+                descricao_modelo="Fibra AS-80 12FO",
+                custo_por_metro=10.0,
+                limite_distancia_metros=2000.0,
+            )
+        ]
+        res_viario = self.store.recalcular_mst_projeto(
+            id_projeto=1,
+            id_usuario_autor=1,
+            arestas_candidatas=arestas_viarias,
+            catalogo_cabos=cabo_custom,
+        )
+        # A distância pela polilinha de rua deve ser maior que a reta geodésica
+        self.assertGreater(res_viario.metragem_total, res_geodesico.metragem_total)
+        self.assertEqual(len(res_viario.trechos_mst[0].caminho_coordenadas), 3)
+        self.assertAlmostEqual(
+            res_viario.custo_total_cabos,
+            round(res_viario.metragem_total * 10.0, 2),
+            places=1,
+        )
 
 
 if __name__ == "__main__":

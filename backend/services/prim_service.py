@@ -12,11 +12,16 @@ Implementa as diretrizes arquiteturais documentadas em `docs/` e `database/schem
 7. Memoização de `Metragem_Total` e `Custo_Estimado` para a entidade `Projeto`.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
 import heapq
+import json
 import math
+import time
 from typing import Dict, List, Optional, Sequence, Set, Tuple
+import urllib.parse
+import urllib.request
 
 from backend.services.exceptions import ValidacaoDominioError
 
@@ -217,6 +222,8 @@ class ResultadoMSTProjeto:
     custo_total_equipamentos: float
     trechos_mst: List[TrechoRedeMST] = field(default_factory=list)
     lista_adjacencia: Dict[int, List[Adjacencia]] = field(default_factory=dict)
+    metragem_malha_candidata: float = 0.0
+    economia_percentual: float = 0.0
 
 
 def calcular_distancia_haversine(
@@ -286,6 +293,296 @@ def gerar_linestring_wkt(
             f"{ponto_destino.longitude:.8f} {ponto_destino.latitude:.8f}"
         )
     return f"SRID=4326;LINESTRING({vertices_str})"
+
+
+_CACHE_ROTAS_VIARIAS: Dict[Tuple[float, float, float, float], Tuple[CoordenadaLatLng, ...]] = {}
+_VALHALLA_OSM_URL = "https://valhalla1.openstreetmap.de/route"
+
+
+def decodificar_polyline6(encoded: str) -> List[CoordenadaLatLng]:
+    """Decodifica string polyline6 (precisão 1e-6 do Valhalla/OSM) em lista de CoordenadaLatLng."""
+    inv = 1.0 / 1e6
+    decoded: List[CoordenadaLatLng] = []
+    prev_lat = 0
+    prev_lng = 0
+    i = 0
+    n = len(encoded)
+    while i < n:
+        ll = [0, 0]
+        for j in (0, 1):
+            shift = 0
+            byte = 0x20
+            while byte >= 0x20 and i < n:
+                byte = ord(encoded[i]) - 63
+                i += 1
+                ll[j] |= (byte & 0x1F) << shift
+                shift += 5
+            ll[j] = (prev_lat if j == 0 else prev_lng) + (
+                ~(ll[j] >> 1) if (ll[j] & 1) else (ll[j] >> 1)
+            )
+        prev_lat, prev_lng = ll[0], ll[1]
+        decoded.append(
+            CoordenadaLatLng(lat=round(prev_lat * inv, 6), lng=round(prev_lng * inv, 6))
+        )
+    return decoded
+
+
+def _chave_cache_rota(ponto_u: PontoRede, ponto_v: PontoRede) -> Tuple[float, float, float, float]:
+    return (
+        round(ponto_u.latitude, 6),
+        round(ponto_u.longitude, 6),
+        round(ponto_v.latitude, 6),
+        round(ponto_v.longitude, 6),
+    )
+
+
+def _armazenar_rota_cache(
+    ponto_u: PontoRede,
+    ponto_v: PontoRede,
+    vertices_rua: Sequence[CoordenadaLatLng],
+) -> Tuple[CoordenadaLatLng, ...]:
+    coord_u = CoordenadaLatLng(lat=ponto_u.latitude, lng=ponto_u.longitude)
+    coord_v = CoordenadaLatLng(lat=ponto_v.latitude, lng=ponto_v.longitude)
+    if len(vertices_rua) >= 2:
+        rota = (coord_u, *vertices_rua, coord_v)
+    else:
+        rota = (coord_u, coord_v)
+    chave_direta = _chave_cache_rota(ponto_u, ponto_v)
+    chave_inversa = _chave_cache_rota(ponto_v, ponto_u)
+    _CACHE_ROTAS_VIARIAS[chave_direta] = rota
+    _CACHE_ROTAS_VIARIAS[chave_inversa] = tuple(reversed(rota))
+    return rota
+
+
+def obter_caminho_viario_osm(
+    ponto_u: PontoRede,
+    ponto_v: PontoRede,
+    timeout_s: float = 4.5,
+) -> Tuple[CoordenadaLatLng, ...]:
+    """
+    Consulta o motor viário OpenStreetMap (Valhalla pedestrian) para obter os vértices
+    das ruas e esquinas entre `ponto_u` e `ponto_v`, evitando atravessar quarteirões/prédios.
+    """
+    coord_u = CoordenadaLatLng(lat=ponto_u.latitude, lng=ponto_u.longitude)
+    coord_v = CoordenadaLatLng(lat=ponto_v.latitude, lng=ponto_v.longitude)
+    fallback = (coord_u, coord_v)
+
+    chave_direta = _chave_cache_rota(ponto_u, ponto_v)
+    if chave_direta in _CACHE_ROTAS_VIARIAS:
+        return _CACHE_ROTAS_VIARIAS[chave_direta]
+
+    payload = json.dumps(
+        {
+            "locations": [
+                {"lat": ponto_u.latitude, "lon": ponto_u.longitude},
+                {"lat": ponto_v.latitude, "lon": ponto_v.longitude},
+            ],
+            "costing": "pedestrian",
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+    for tentativa in range(3):
+        try:
+            req = urllib.request.Request(
+                _VALHALLA_OSM_URL,
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "InfraRouteGIS/1.0",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+                dados = json.loads(resp.read().decode("utf-8"))
+            shape_str = dados.get("trip", {}).get("legs", [{}])[0].get("shape", "")
+            if shape_str:
+                vertices_rua = decodificar_polyline6(shape_str)
+                if len(vertices_rua) >= 2:
+                    return _armazenar_rota_cache(ponto_u, ponto_v, vertices_rua)
+        except Exception:
+            if tentativa < 2:
+                time.sleep(0.25 * (tentativa + 1))
+
+    return fallback
+
+
+def _precarregar_rotas_viarias_lote(
+    pares_pontos: Sequence[Tuple[PontoRede, PontoRede]],
+    max_locations_por_lote: int = 10,
+) -> None:
+    """
+    Resolve múltiplos pares `(u, v)` em lote enviando até 10 waypoints encadeados por
+    requisição HTTP POST ao Valhalla OSM, evitando rate-limiting (HTTP 429) e reduzindo
+    drasticamente a latência de cálculo do Snap Viário.
+    """
+    pendentes: List[Tuple[PontoRede, PontoRede]] = [
+        (u, v)
+        for u, v in pares_pontos
+        if _chave_cache_rota(u, v) not in _CACHE_ROTAS_VIARIAS
+    ]
+    if not pendentes:
+        return
+
+    # Monta trilhas encadeadas de até `max_locations_por_lote` pontos
+    lotes: List[Tuple[List[PontoRede], Dict[int, Tuple[PontoRede, PontoRede]]]] = []
+    restantes = list(pendentes)
+
+    while restantes:
+        seq: List[PontoRede] = []
+        mapa_legs: Dict[int, Tuple[PontoRede, PontoRede]] = {}
+
+        while restantes:
+            if not seq:
+                u, v = restantes.pop(0)
+                seq.extend([u, v])
+                mapa_legs[0] = (u, v)
+                continue
+
+            ultimo_id = seq[-1].id_ponto
+            idx_conectado: Optional[int] = None
+            inverter = False
+            for idx, (cand_u, cand_v) in enumerate(restantes):
+                if cand_u.id_ponto == ultimo_id:
+                    idx_conectado = idx
+                    inverter = False
+                    break
+                if cand_v.id_ponto == ultimo_id:
+                    idx_conectado = idx
+                    inverter = True
+                    break
+
+            if idx_conectado is not None:
+                if len(seq) + 1 > max_locations_por_lote:
+                    break
+                cand_u, cand_v = restantes.pop(idx_conectado)
+                prox_ponto = cand_u if inverter else cand_v
+                origem_ponto = cand_v if inverter else cand_u
+                mapa_legs[len(seq) - 1] = (origem_ponto, prox_ponto)
+                seq.append(prox_ponto)
+            else:
+                if len(seq) + 2 > max_locations_por_lote:
+                    break
+                u, v = restantes.pop(0)
+                # A perna de transição seq[-1] -> u também é aproveitada no cache
+                if seq[-1].id_ponto != u.id_ponto:
+                    mapa_legs[len(seq) - 1] = (seq[-1], u)
+                    seq.append(u)
+                if len(seq) + 1 <= max_locations_por_lote:
+                    mapa_legs[len(seq) - 1] = (u, v)
+                    seq.append(v)
+                else:
+                    restantes.insert(0, (u, v))
+                    break
+
+        if len(seq) >= 2:
+            lotes.append((seq, mapa_legs))
+
+    def _executar_lote(
+        lote: Tuple[List[PontoRede], Dict[int, Tuple[PontoRede, PontoRede]]]
+    ) -> None:
+        seq_pts, mapa_legs = lote
+        payload = json.dumps(
+            {
+                "locations": [{"lat": p.latitude, "lon": p.longitude} for p in seq_pts],
+                "costing": "pedestrian",
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+        for tentativa in range(3):
+            try:
+                req = urllib.request.Request(
+                    _VALHALLA_OSM_URL,
+                    data=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "User-Agent": "InfraRouteGIS/1.0",
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=6.0) as resp:
+                    dados = json.loads(resp.read().decode("utf-8"))
+                legs = dados.get("trip", {}).get("legs", [])
+                for leg_idx, (pt_u, pt_v) in mapa_legs.items():
+                    if leg_idx < len(legs):
+                        shape_str = legs[leg_idx].get("shape", "")
+                        if shape_str:
+                            vertices = decodificar_polyline6(shape_str)
+                            if len(vertices) >= 2:
+                                _armazenar_rota_cache(pt_u, pt_v, vertices)
+                return
+            except Exception:
+                if tentativa < 2:
+                    time.sleep(0.25 * (tentativa + 1))
+
+    with ThreadPoolExecutor(max_workers=min(2, len(lotes))) as pool:
+        list(pool.map(_executar_lote, lotes))
+
+
+def gerar_arestas_candidatas_viarias(
+    pontos: Sequence[PontoRede],
+    limite_max_metros: float,
+    k_vizinhos: int = 4,
+) -> List[ArestaCandidata]:
+    """
+    Gera as arestas candidatas entre os `k_vizinhos` mais próximos de cada nó ativo,
+    enriquecendo cada par com a geometria viária real (`caminho_coordenadas`) das ruas.
+    """
+    ativos = [
+        p
+        for p in pontos
+        if (p.status_ponto.value if isinstance(p.status_ponto, Enum) else str(p.status_ponto))
+        == StatusPontoProjeto.ATIVO.value
+        and (p.status_fisico.value if isinstance(p.status_fisico, Enum) else str(p.status_fisico))
+        != StatusFisicoPonto.DESATIVADO.value
+    ]
+    if len(ativos) < 2:
+        return []
+
+    mapa_ativos = {p.id_ponto: p for p in ativos}
+    pares_candidatos: Set[Tuple[int, int]] = set()
+
+    for u in ativos:
+        distancias: List[Tuple[float, int]] = []
+        for v in ativos:
+            if u.id_ponto == v.id_ponto:
+                continue
+            d = calcular_distancia_haversine(u.latitude, u.longitude, v.latitude, v.longitude)
+            if 0.0 < d <= limite_max_metros:
+                distancias.append((d, v.id_ponto))
+        distancias.sort(key=lambda item: item[0])
+        for _, id_viz in distancias[:k_vizinhos]:
+            par = (min(u.id_ponto, id_viz), max(u.id_ponto, id_viz))
+            pares_candidatos.add(par)
+
+    lista_pares = sorted(pares_candidatos)
+    if not lista_pares:
+        return []
+
+    pares_pontos = [(mapa_ativos[u_id], mapa_ativos[v_id]) for u_id, v_id in lista_pares]
+    _precarregar_rotas_viarias_lote(pares_pontos)
+
+    arestas: List[ArestaCandidata] = []
+    for u_pt, v_pt in pares_pontos:
+        caminho = obter_caminho_viario_osm(u_pt, v_pt)
+        # Se por falha externa cair em fallback de 2 vértices, aplica fator Manhattan (1.42x)
+        # para impedir que um segmento reto atravessando prédio ganhe de uma rota viária real no Prim.
+        dist_override: Optional[float] = None
+        if len(caminho) <= 2:
+            dist_reta = calcular_distancia_haversine(
+                u_pt.latitude, u_pt.longitude, v_pt.latitude, v_pt.longitude
+            )
+            dist_override = round(max(0.01, dist_reta * 1.42), 2)
+        arestas.append(
+            ArestaCandidata(
+                origem_id=u_pt.id_ponto,
+                destino_id=v_pt.id_ponto,
+                distancia_metros=dist_override,
+                caminho_coordenadas=caminho,
+            )
+        )
+    return arestas
 
 
 class GrafoTopologicoOptico:
@@ -661,6 +958,42 @@ class GrafoTopologicoOptico:
         custo_estimado = round(custo_total_cabos + custo_total_equipamentos, 2)
         grafo_conexo = len(visitados) == len(self.nos_ativos)
 
+        arestas_unicas_malha: Dict[Tuple[int, int], float] = {}
+        for id_u, adjs in self.lista_adjacencia.items():
+            if id_u not in visitados:
+                continue
+            for adj in adjs:
+                if adj.destino_id not in visitados:
+                    continue
+                par = (min(id_u, adj.destino_id), max(id_u, adj.destino_id))
+                if (
+                    par not in arestas_unicas_malha
+                    or adj.distancia_metros < arestas_unicas_malha[par]
+                ):
+                    arestas_unicas_malha[par] = adj.distancia_metros
+
+        if len(visitados) >= 3 and len(arestas_unicas_malha) <= len(trechos_mst):
+            ids_visitados = sorted(visitados)
+            for idx_i in range(len(ids_visitados)):
+                u_no = self.nos_ativos[ids_visitados[idx_i]]
+                for idx_j in range(idx_i + 1, len(ids_visitados)):
+                    v_no = self.nos_ativos[ids_visitados[idx_j]]
+                    par = (u_no.id_ponto, v_no.id_ponto)
+                    if par not in arestas_unicas_malha:
+                        dist_h = calcular_distancia_haversine(
+                            u_no.latitude, u_no.longitude, v_no.latitude, v_no.longitude
+                        )
+                        if 0.0 < dist_h <= self.maior_limite_cabo_metros:
+                            arestas_unicas_malha[par] = dist_h
+
+        metragem_malha_candidata = round(sum(arestas_unicas_malha.values()), 2)
+        if metragem_malha_candidata > metragem_total and metragem_malha_candidata > 0.0:
+            economia_percentual = round(
+                (1.0 - (metragem_total / metragem_malha_candidata)) * 100.0, 1
+            )
+        else:
+            economia_percentual = 0.0
+
         return ResultadoMSTProjeto(
             id_projeto=self.id_projeto,
             nos_ativos_processados=len(self.nos_ativos),
@@ -674,4 +1007,6 @@ class GrafoTopologicoOptico:
                 id_no: list(adjacencias)
                 for id_no, adjacencias in self.lista_adjacencia.items()
             },
+            metragem_malha_candidata=metragem_malha_candidata,
+            economia_percentual=economia_percentual,
         )

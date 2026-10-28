@@ -503,8 +503,25 @@
   cursor: pointer;
 }
 
-.pole-marker[data-tool="pole"] {
+.pole-marker[data-tool="pole"],
+.pole-marker[data-tool="cto"],
+.pole-marker[data-tool="ceo"],
+.pole-marker[data-tool="olt"] {
   cursor: crosshair;
+}
+
+.pole-marker[data-equip="1"] {
+  background: #10b981;
+}
+
+.pole-marker[data-equip="2"] {
+  background: #f59e0b;
+}
+
+.pole-marker[data-equip="3"] {
+  background: #ec4899;
+  width: 22px;
+  height: 22px;
 }
 
 .pole-marker--selected {
