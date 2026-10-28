@@ -6,13 +6,25 @@ Conecta `GovernancaMultiTenantService` e `GrafoTopologicoOptico` para prover
 todas as operações consumidas pelas telas `login.html` e `index.html`.
 """
 
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Sequence
 
 from backend.services.exceptions import (
+    NaoAutenticadoError,
     RecursoNaoEncontradoError,
     ValidacaoDominioError,
     ViolacaoMultiTenantError,
+)
+from backend.services.security_service import (
+    GerenciadorVerificacaoEmail,
+    LimitadorTentativasLogin,
+    decodificar_token_acesso,
+    gerar_hash_senha,
+    gerar_token_acesso,
+    revogador_tokens,
+    validar_forca_senha,
+    verificar_senha,
 )
 from backend.services.governanca_service import (
     Empresa,
@@ -38,6 +50,9 @@ from backend.services.prim_service import (
 )
 
 
+_HASH_SENHA_SEED_PADRAO: str = gerar_hash_senha("123456")
+
+
 @dataclass(frozen=True)
 class SessaoAutenticada:
     id_usuario: int
@@ -48,6 +63,20 @@ class SessaoAutenticada:
     id_empresa_padrao: int
     razao_social_empresa: str
     nivel_acesso: str
+    access_token: str = field(default="", compare=False)
+    token_type: str = field(default="bearer", compare=False)
+    email_verificado: bool = field(default=True, compare=False)
+    codigo_verificacao_dev: Optional[str] = field(default=None, compare=False)
+
+
+@dataclass(frozen=True)
+class EventoAuditoria:
+    id_evento: int
+    timestamp_utc: str
+    acao: str
+    id_usuario: Optional[int]
+    email_usuario: Optional[str]
+    detalhes: str
 
 
 class WorkspaceStoreService:
@@ -93,10 +122,20 @@ class WorkspaceStoreService:
             ),
         }
 
+        # Armazena exclusivamente hashes bcrypt ($2b$12$...) das senhas dos colaboradores
         self._senhas_usuarios: Dict[int, str] = {
-            1: "123456",
-            2: "123456",
+            1: _HASH_SENHA_SEED_PADRAO,
+            2: _HASH_SENHA_SEED_PADRAO,
         }
+        self._emails_verificados: Dict[int, bool] = {
+            1: True,
+            2: True,
+        }
+        self.limitador_login = LimitadorTentativasLogin()
+        self.verificador_email = GerenciadorVerificacaoEmail()
+        self.trilha_auditoria: List[EventoAuditoria] = []
+        self._proximo_id_auditoria: int = 1
+        revogador_tokens.limpar()
 
         self.vinculos: List[VinculoCorporate] = [
             VinculoCorporate(
@@ -227,10 +266,41 @@ class WorkspaceStoreService:
         for id_proj in (1, 2):
             self.recalcular_mst_projeto(id_projeto=id_proj, id_usuario_autor=1)
 
+    def _registrar_evento_auditoria(
+        self,
+        acao: str,
+        detalhes: str,
+        id_usuario: Optional[int] = None,
+        email_usuario: Optional[str] = None,
+    ) -> EventoAuditoria:
+        if email_usuario is None and id_usuario is not None and id_usuario in self.usuarios:
+            email_usuario = self.usuarios[id_usuario].email
+        evento = EventoAuditoria(
+            id_evento=self._proximo_id_auditoria,
+            timestamp_utc=datetime.now(timezone.utc).isoformat(),
+            acao=acao,
+            id_usuario=id_usuario,
+            email_usuario=email_usuario,
+            detalhes=detalhes,
+        )
+        self._proximo_id_auditoria += 1
+        self.trilha_auditoria.append(evento)
+        return evento
+
+    def listar_eventos_auditoria(self, id_usuario_autor: int = 1) -> List[EventoAuditoria]:
+        self.governanca.validar_acesso_tenant(
+            id_usuario=id_usuario_autor,
+            id_empresa=1,
+            exigir_escrita=False,
+        )
+        return list(reversed(self.trilha_auditoria))
+
     def autenticar_usuario(self, email: str, senha: str) -> SessaoAutenticada:
         email_norm = (email or "").strip().lower()
         if not email_norm or not senha:
             raise ValidacaoDominioError("E-mail e senha são obrigatórios.")
+
+        self.limitador_login.verificar_disponibilidade(email_norm)
 
         usuario_encontrado: Optional[Usuario] = None
         for usr in self.usuarios.values():
@@ -239,14 +309,40 @@ class WorkspaceStoreService:
                 break
 
         if usuario_encontrado is None:
+            # Executa verificação dummy em tempo constante para mitigar enumeração por timing
+            verificar_senha(senha, _HASH_SENHA_SEED_PADRAO)
+            tentativas = self.limitador_login.registrar_falha(email_norm)
+            self._registrar_evento_auditoria(
+                acao="LOGIN_FALHA",
+                email_usuario=email_norm,
+                detalhes=f"Tentativa com e-mail inexistente ({tentativas}/{self.limitador_login.max_tentativas}).",
+            )
             raise ViolacaoMultiTenantError("Credenciais corporativas inválidas.")
 
-        senha_cadastrada = self._senhas_usuarios.get(usuario_encontrado.id_usuario)
-        if senha_cadastrada is not None and senha != senha_cadastrada:
+        senha_hash_cadastrada = self._senhas_usuarios.get(usuario_encontrado.id_usuario)
+        if not senha_hash_cadastrada or not verificar_senha(senha, senha_hash_cadastrada):
+            tentativas = self.limitador_login.registrar_falha(email_norm)
+            self._registrar_evento_auditoria(
+                acao="LOGIN_FALHA",
+                id_usuario=usuario_encontrado.id_usuario,
+                email_usuario=email_norm,
+                detalhes=f"Senha incorreta ({tentativas}/{self.limitador_login.max_tentativas}).",
+            )
             raise ViolacaoMultiTenantError("Credenciais corporativas inválidas.")
 
+        self.limitador_login.resetar(email_norm)
+        sessao = self._construir_sessao_usuario(usuario_encontrado)
+        self._registrar_evento_auditoria(
+            acao="LOGIN_SUCESSO",
+            id_usuario=usuario_encontrado.id_usuario,
+            email_usuario=usuario_encontrado.email,
+            detalhes=f"Sessão JWT autenticada com perfil {sessao.nivel_acesso}.",
+        )
+        return sessao
+
+    def _construir_sessao_usuario(self, usuario: Usuario) -> SessaoAutenticada:
         vinculos_usuario = [
-            v for v in self.vinculos if v.id_usuario == usuario_encontrado.id_usuario
+            v for v in self.vinculos if v.id_usuario == usuario.id_usuario
         ]
         if not vinculos_usuario:
             raise ViolacaoMultiTenantError(
@@ -255,17 +351,89 @@ class WorkspaceStoreService:
 
         vinculo_principal = vinculos_usuario[0]
         empresa = self.empresas[vinculo_principal.id_empresa]
+        token = gerar_token_acesso(
+            id_usuario=usuario.id_usuario,
+            email=usuario.email,
+            id_empresa=empresa.id_empresa,
+            nivel_acesso=vinculo_principal.nivel_acesso.value,
+            eh_engenheiro=usuario.eh_engenheiro,
+        )
+        verificado = self._emails_verificados.get(usuario.id_usuario, True)
+        codigo_dev = (
+            None
+            if verificado
+            else self.verificador_email.obter_codigo_pendente(usuario.email)
+        )
 
         return SessaoAutenticada(
-            id_usuario=usuario_encontrado.id_usuario,
-            nome=usuario_encontrado.nome,
-            email=usuario_encontrado.email,
-            crea=usuario_encontrado.crea,
-            eh_engenheiro=usuario_encontrado.eh_engenheiro,
+            id_usuario=usuario.id_usuario,
+            nome=usuario.nome,
+            email=usuario.email,
+            crea=usuario.crea,
+            eh_engenheiro=usuario.eh_engenheiro,
             id_empresa_padrao=empresa.id_empresa,
             razao_social_empresa=empresa.razao_social,
             nivel_acesso=vinculo_principal.nivel_acesso.value,
+            access_token=token,
+            token_type="bearer",
+            email_verificado=verificado,
+            codigo_verificacao_dev=codigo_dev,
         )
+
+    def validar_token_sessao(self, token: str) -> SessaoAutenticada:
+        payload = decodificar_token_acesso(token)
+        usuario = self.usuarios.get(payload.id_usuario)
+        if usuario is None:
+            raise NaoAutenticadoError("Usuário associado ao token não existe mais.")
+        return self._construir_sessao_usuario(usuario)
+
+    def revogar_token_sessao(self, token: str) -> None:
+        payload = decodificar_token_acesso(token)
+        revogador_tokens.revogar(payload.jti, payload.exp)
+        self._registrar_evento_auditoria(
+            acao="LOGOUT_REVOGACAO_JWT",
+            id_usuario=payload.id_usuario,
+            email_usuario=payload.email,
+            detalhes=f"Token JWT revogado (jti={payload.jti[:8]}...).",
+        )
+
+    def verificar_email_usuario(self, email: str, codigo: str) -> SessaoAutenticada:
+        email_norm = (email or "").strip().lower()
+        usuario = next(
+            (u for u in self.usuarios.values() if u.email.strip().lower() == email_norm),
+            None,
+        )
+        if usuario is None:
+            raise RecursoNaoEncontradoError("E-mail não encontrado para verificação.")
+
+        if not self.verificador_email.validar_codigo_otp(email_norm, codigo):
+            raise ValidacaoDominioError("Código de verificação inválido.")
+
+        self._emails_verificados[usuario.id_usuario] = True
+        self._registrar_evento_auditoria(
+            acao="EMAIL_VERIFICADO",
+            id_usuario=usuario.id_usuario,
+            email_usuario=usuario.email,
+            detalhes="E-mail corporativo verificado via código OTP de 6 dígitos.",
+        )
+        return self._construir_sessao_usuario(usuario)
+
+    def reenviar_codigo_verificacao(self, email: str) -> str:
+        email_norm = (email or "").strip().lower()
+        usuario = next(
+            (u for u in self.usuarios.values() if u.email.strip().lower() == email_norm),
+            None,
+        )
+        if usuario is None:
+            raise RecursoNaoEncontradoError("E-mail não encontrado.")
+        codigo = self.verificador_email.gerar_codigo_otp(email_norm)
+        self._registrar_evento_auditoria(
+            acao="REENVIO_OTP_EMAIL",
+            id_usuario=usuario.id_usuario,
+            email_usuario=usuario.email,
+            detalhes="Novo código OTP de 6 dígitos emitido.",
+        )
+        return codigo
 
     def registrar_usuario(
         self,
@@ -276,6 +444,7 @@ class WorkspaceStoreService:
         cpf: str,
         crea: str,
     ) -> SessaoAutenticada:
+        validar_forca_senha(senha)
         email_norm = email.strip().lower()
         cpf_norm = "".join(filter(str.isdigit, cpf))
         crea_norm = crea.strip().upper()
@@ -306,11 +475,19 @@ class WorkspaceStoreService:
         )
 
         self.usuarios[novo_id] = usuario
-        self._senhas_usuarios[novo_id] = senha
+        self._senhas_usuarios[novo_id] = gerar_hash_senha(senha)
+        self._emails_verificados[novo_id] = False
+        self.verificador_email.gerar_codigo_otp(email_norm)
         self.vinculos.append(vinculo)
         self.governanca.usuarios[novo_id] = usuario
         self.governanca.vinculos[(novo_id, 1)] = vinculo
 
+        self._registrar_evento_auditoria(
+            acao="CADASTRO_USUARIO",
+            id_usuario=novo_id,
+            email_usuario=email_norm,
+            detalhes=f"Engenheiro cadastrado (CREA {crea_normalizado}) e código OTP gerado.",
+        )
         return self.autenticar_usuario(email_norm, senha)
 
     def listar_projetos(

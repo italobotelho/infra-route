@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { clearSession, getSession } from "../../../lib/api";
+import { getSession, logoutSession } from "../../../lib/api";
 import { Default } from "./icons/Default";
 import default24 from "../assets/default-24.svg";
 import default25 from "../assets/default-25.svg";
@@ -60,8 +60,8 @@ export const WorkspaceNavigationSidebarSection = () => {
     if (label === "Projetos") navigate("/projetos");
   };
 
-  const handleLogout = () => {
-    clearSession();
+  const handleLogout = async () => {
+    await logoutSession();
     navigate("/login", { replace: true });
   };
 

@@ -4,8 +4,11 @@ Schemas Pydantic alinhados à modelagem lógica e física do sistema InfraRoute.
 
 from enum import Enum
 import math
+import re
 from typing import Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
+
+from backend.services.security_service import validar_forca_senha
 
 
 class EnumStatusProjeto(str, Enum):
@@ -63,6 +66,28 @@ class RegistroRequestSchema(BaseModel):
     cpf: str = Field(..., min_length=11)
     crea: str = Field(..., min_length=1, max_length=32)
 
+    @field_validator("email")
+    @classmethod
+    def validar_formato_email(cls, v: str) -> str:
+        email_limpo = (v or "").strip()
+        if not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", email_limpo):
+            raise ValueError("Formato de e-mail inválido.")
+        return email_limpo
+
+    @field_validator("senha")
+    @classmethod
+    def validar_complexidade_senha(cls, v: str) -> str:
+        validar_forca_senha(v)
+        return v
+
+    @field_validator("cpf")
+    @classmethod
+    def validar_cpf_basico(cls, v: str) -> str:
+        digitos = "".join(filter(str.isdigit, v or ""))
+        if len(digitos) != 11 or len(set(digitos)) == 1:
+            raise ValueError("CPF inválido: deve conter 11 dígitos numéricos não repetidos.")
+        return v
+
 
 class LoginResponseSchema(BaseModel):
     id_usuario: int
@@ -73,6 +98,43 @@ class LoginResponseSchema(BaseModel):
     id_empresa_padrao: int
     razao_social_empresa: str
     nivel_acesso: EnumNivelAcesso
+    access_token: str = Field(
+        default="",
+        description="Token JWT (HS256) assinado para autenticação Bearer nas rotas protegidas",
+    )
+    token_type: str = Field(default="bearer", description="Esquema HTTP Authorization (Bearer)")
+    email_verificado: bool = Field(
+        default=True,
+        description="Indica se o e-mail corporativo foi verificado via código OTP",
+    )
+    codigo_verificacao_dev: Optional[str] = Field(
+        default=None,
+        description="Código OTP de 6 dígitos exposto apenas em ambiente de desenvolvimento local",
+    )
+
+
+class VerificarEmailRequestSchema(BaseModel):
+    email: str = Field(..., min_length=3)
+    codigo: str = Field(..., min_length=6, max_length=6, description="Código OTP de 6 dígitos")
+
+
+class ReenviarCodigoRequestSchema(BaseModel):
+    email: str = Field(..., min_length=3)
+
+
+class MensagemSegurancaResponseSchema(BaseModel):
+    mensagem: str
+    email_verificado: Optional[bool] = None
+    codigo_verificacao_dev: Optional[str] = None
+
+
+class EventoAuditoriaSchema(BaseModel):
+    id_evento: int
+    timestamp_utc: str
+    acao: str
+    id_usuario: Optional[int] = None
+    email_usuario: Optional[str] = None
+    detalhes: str
 
 
 class TipoEquipamentoSchema(BaseModel):

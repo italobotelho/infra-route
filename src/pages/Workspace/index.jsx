@@ -464,8 +464,8 @@ function MapCanvas({
 
     const polesById = new Map(poles.map((pole) => [pole.id, pole]));
     trechos.forEach((trecho) => {
-      const origin = polesById.get(trecho.id_ponto_origem);
-      const dest = polesById.get(trecho.id_ponto_destino);
+      const origin = polesById.get(trecho.origem_id ?? trecho.id_ponto_origem);
+      const dest = polesById.get(trecho.destino_id ?? trecho.id_ponto_destino);
       if (!origin || !dest) return;
       const line = new window.google.maps.Polyline({
         path: [

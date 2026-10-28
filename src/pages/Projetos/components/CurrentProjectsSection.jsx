@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiRequest, getSession } from "../../../lib/api";
+import { apiRequest, getSession, saveSession } from "../../../lib/api";
 import { Icon, Icon1, Icon2, Icon3, Icon4, Icon5, Icon6, Icon7, Icon8, IconComponentNode } from "./icons/ActionIcons";
 import collaborators from "../assets/collaborators.svg";
 import collaborators2 from "../assets/collaborators-2.svg";
@@ -216,7 +216,10 @@ const headerColumns = [
 
 export const CurrentProjectsSection = () => {
   const navigate = useNavigate();
-  const session = getSession();
+  const [session, setSessionState] = useState(() => getSession());
+  const [otpCode, setOtpCode] = useState("");
+  const [otpMessage, setOtpMessage] = useState("");
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState([]);
   const [page, setPage] = useState(1);
@@ -329,8 +332,102 @@ export const CurrentProjectsSection = () => {
     }
   };
 
+  const verifyEmailOtp = async (event) => {
+    event.preventDefault();
+    if (!otpCode.trim() || otpCode.trim().length !== 6) return;
+    setIsVerifyingOtp(true);
+    setOtpMessage("");
+    try {
+      const updated = await apiRequest("/auth/verificar-email", {
+        method: "POST",
+        body: JSON.stringify({
+          email: session.email,
+          codigo: otpCode.trim(),
+        }),
+      });
+      saveSession(updated);
+      setSessionState(updated);
+      setOtpCode("");
+      setOtpMessage("E-mail verificado com sucesso!");
+    } catch (err) {
+      setOtpMessage(err.message);
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
+  const resendEmailOtp = async () => {
+    setOtpMessage("");
+    try {
+      const res = await apiRequest("/auth/reenviar-codigo", {
+        method: "POST",
+        body: JSON.stringify({ email: session.email }),
+      });
+      const updated = {
+        ...session,
+        codigo_verificacao_dev: res.codigo_verificacao_dev || session.codigo_verificacao_dev,
+      };
+      saveSession(updated);
+      setSessionState(updated);
+      setOtpMessage(res.mensagem);
+    } catch (err) {
+      setOtpMessage(err.message);
+    }
+  };
+
   return (
     <main className="flex flex-col items-start gap-6 p-8 relative flex-1 self-stretch grow">
+      {session && session.email_verificado === false && (
+        <section
+          role="region"
+          aria-label="Verificação de e-mail"
+          className="flex flex-wrap items-center justify-between gap-4 w-full rounded-xl border border-amber-300 bg-amber-50 px-5 py-4 text-slate-900 shadow-sm"
+        >
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-semibold text-amber-900">
+              Confirme seu e-mail corporativo ({session.email})
+            </span>
+            <span className="text-xs text-amber-800">
+              Digite o código de 6 dígitos enviado para sua conta.
+              {session.codigo_verificacao_dev && (
+                <strong className="ml-2 rounded bg-amber-200 px-2 py-0.5 font-mono text-amber-950">
+                  Código Dev: {session.codigo_verificacao_dev}
+                </strong>
+              )}
+            </span>
+            {otpMessage && (
+              <span className="text-xs font-medium text-red-700" role="alert">
+                {otpMessage}
+              </span>
+            )}
+          </div>
+          <form onSubmit={verifyEmailOtp} className="flex items-center gap-2">
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="000000"
+              value={otpCode}
+              onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              className="h-10 w-28 rounded-lg border border-amber-400 bg-white px-3 text-center font-mono text-sm tracking-widest text-slate-900"
+            />
+            <button
+              type="submit"
+              disabled={isVerifyingOtp || otpCode.length !== 6}
+              className="h-10 rounded-lg bg-amber-600 px-4 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+            >
+              {isVerifyingOtp ? "Validando..." : "Verificar e-mail"}
+            </button>
+            <button
+              type="button"
+              onClick={resendEmailOtp}
+              className="h-10 rounded-lg border border-amber-400 bg-white px-3 text-xs font-medium text-amber-900 hover:bg-amber-100"
+            >
+              Reenviar código
+            </button>
+          </form>
+        </section>
+      )}
       <header className="flex flex-col min-h-20 items-start gap-4 relative self-stretch w-full flex-[0_0_auto]">
         <div className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
           <nav
