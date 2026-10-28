@@ -209,6 +209,25 @@ class TestWorkspaceFluxoCompleto(unittest.TestCase):
             places=1,
         )
 
+    def test_05_alteracao_status_projeto_e_imutabilidade_historica(self) -> None:
+        # Atualiza status para Concluído e verifica que tentativa de escrita posterior é bloqueada (Seção 3.3)
+        proj = self.store.atualizar_status_projeto(
+            id_projeto=1,
+            novo_status="Concluído",
+            id_usuario_autor=1,
+        )
+        self.assertEqual(proj.status.value, "Concluído")
+
+        from backend.services.exceptions import InfraRouteError
+        with self.assertRaises(InfraRouteError):
+            self.store.adicionar_ponto_rede(
+                id_projeto=1,
+                descricao="Poste em projeto concluído",
+                latitude=-22.705,
+                longitude=-46.985,
+                id_usuario_autor=1,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

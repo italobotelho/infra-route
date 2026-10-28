@@ -79,13 +79,13 @@ const layers = [
     bright: true,
   },
   {
-    label: "Dutos Subterrâneos",
+    label: "Dutos e Cabos Ópticos",
     icon: default15,
-    enabled: false,
-    bright: false,
+    enabled: true,
+    bright: true,
   },
   {
-    label: "Caixas CTO Existentes",
+    label: "Caixas CTO / CEO / OLT",
     icon: default16,
     enabled: true,
     bright: true,
@@ -332,11 +332,13 @@ function createPoleEntry(map, pole, handlersRef) {
   });
 
   element.addEventListener("click", (event) => {
-    if (suppressClick || handlersRef.current.tool !== "select") return;
-    handlersRef.current.onSelectPole(
-      pole.id,
-      event.shiftKey || event.metaKey || event.ctrlKey,
-    );
+    if (suppressClick) return;
+    if (handlersRef.current.tool === "select" || handlersRef.current.tool === "cable") {
+      handlersRef.current.onSelectPole(
+        pole.id,
+        event.shiftKey || event.metaKey || event.ctrlKey,
+      );
+    }
   });
 
   return { overlay, element };
@@ -433,16 +435,18 @@ function MapCanvas({
   // Cursor do mapa de acordo com a ferramenta.
   useEffect(() => {
     if (!map) return;
-    const isPlacementTool = Boolean(TOOL_EQUIPMENT_CONFIG[tool]);
-    map.setOptions({ draggableCursor: isPlacementTool ? "crosshair" : null });
+    const isPlacementOrLasso = Boolean(TOOL_EQUIPMENT_CONFIG[tool]) || tool === "lasso";
+    map.setOptions({ draggableCursor: isPlacementOrLasso ? "crosshair" : null });
   }, [map, tool]);
 
-  // Clique no mapa: adiciona ativo (P, C, E, O) ou limpa a seleção (V).
+  // Clique no mapa: adiciona ativo (P, C, E, O), seleciona em caixa (L) ou limpa a seleção (V).
   useEffect(() => {
     if (!map) return;
     const listener = map.addListener("click", (event) => {
       if (TOOL_EQUIPMENT_CONFIG[tool] && event.latLng) {
         onAddPole(event.latLng.toJSON(), tool);
+      } else if (tool === "lasso" && event.latLng) {
+        onAddPole(event.latLng.toJSON(), "lasso");
       } else if (tool === "select" && !event.domEvent?.shiftKey) {
         onClearSelection();
       }
@@ -682,7 +686,7 @@ function ToolBar({ selectedTool, onSelectTool, snapEnabled, onToggleSnap }) {
   );
 }
 
-function ToolHint({ tool, selectedCount, snapEnabled }) {
+function ToolHint({ tool, selectedCount, snapEnabled, lassoStart, cableOriginId }) {
   let text;
   if (tool === "pole") {
     text = "Clique no mapa para posicionar um Poste de passagem · Esc para voltar";
@@ -692,6 +696,14 @@ function ToolHint({ tool, selectedCount, snapEnabled }) {
     text = "Clique no mapa para posicionar uma Caixa de Emenda CEO (R$ 520,00) · Esc para voltar";
   } else if (tool === "olt") {
     text = "Clique no mapa para posicionar um Switch / OLT POP (R$ 2.450,00) · Esc para voltar";
+  } else if (tool === "lasso") {
+    text = lassoStart
+      ? "Lasso: clique no 2º canto do retângulo para selecionar os ativos da área · Esc cancela"
+      : "Lasso: clique no 1º canto no mapa para abrir uma caixa de seleção múltipla";
+  } else if (tool === "cable") {
+    text = cableOriginId
+      ? `Cabo: origem #${cableOriginId} selecionada · clique no ativo de destino para inspecionar o enlace`
+      : "Cabo: clique no ativo de origem e depois no destino para inspecionar o trecho óptico";
   } else if (tool === "select") {
     text =
       selectedCount > 0
@@ -903,15 +915,14 @@ function Sidebar({
   maxSpan,
   onMaxSpanChange,
   snapEnabled,
+  layerState,
+  onToggleLayer,
 }) {
   const [search, setSearch] = useState("");
   const [searchState, setSearchState] = useState({
     message: "",
     error: false,
   });
-  const [layerState, setLayerState] = useState(
-    layers.map((layer) => layer.enabled),
-  );
 
   const submitSearch = async (event) => {
     event.preventDefault();
@@ -932,11 +943,7 @@ function Sidebar({
   };
 
   const updateLayer = (index) => {
-    setLayerState((current) =>
-      current.map((value, layerIndex) =>
-        layerIndex === index ? !value : value,
-      ),
-    );
+    onToggleLayer?.(index);
   };
 
   return (
@@ -1170,8 +1177,24 @@ export const WorkspaceGis = () => {
   const [cableType, setCableType] = useState("AS-80 12 FO");
   const [cablePrice, setCablePrice] = useState(4.5);
   const [maxSpan, setMaxSpan] = useState(2000);
+  const [layerState, setLayerState] = useState(() => layers.map((layer) => layer.enabled));
+  const [lassoStart, setLassoStart] = useState(null);
+  const [cableOriginId, setCableOriginId] = useState(null);
+  const [isGraphConnected, setIsGraphConnected] = useState(true);
   const [requestError, setRequestError] = useState("");
   const [isCalculating, setIsCalculating] = useState(false);
+
+  const toggleLayer = useCallback((index) => {
+    setLayerState((current) =>
+      current.map((value, layerIndex) => (layerIndex === index ? !value : value)),
+    );
+  }, []);
+
+  const visiblePoles = poles.filter((pole) => {
+    if (!pole.id_tipo_equipamento) return layerState[0] !== false;
+    return layerState[2] !== false;
+  });
+  const visibleTrechos = layerState[1] !== false ? trechos : [];
 
   const handleCableTypeChange = useCallback((nextType) => {
     setCableType(nextType);
@@ -1254,6 +1277,7 @@ export const WorkspaceGis = () => {
             setDistanceMeters(mstResult.metragem_total);
             setEstimatedCost(mstResult.custo_estimado);
             setSavingsPercent(mstResult.economia_percentual ?? 0);
+            setIsGraphConnected(mstResult.grafo_conexo !== false);
             setTrechos(mstResult.trechos_mst || []);
           }
         }
@@ -1276,6 +1300,8 @@ export const WorkspaceGis = () => {
 
   const selectTool = useCallback((toolId) => {
     setTool(toolId);
+    setLassoStart(null);
+    setCableOriginId(null);
     if (toolId !== "select") {
       setSelectedIds([]);
       setSelectedTrecho(null);
@@ -1283,6 +1309,25 @@ export const WorkspaceGis = () => {
   }, []);
 
   const addPole = useCallback(async ({ lat, lng }, activeTool = "pole") => {
+    if (activeTool === "lasso") {
+      if (!lassoStart) {
+        setLassoStart({ lat, lng });
+      } else {
+        const minLat = Math.min(lassoStart.lat, lat);
+        const maxLat = Math.max(lassoStart.lat, lat);
+        const minLng = Math.min(lassoStart.lng, lng);
+        const maxLng = Math.max(lassoStart.lng, lng);
+        const insideIds = poles
+          .filter((p) => p.lat >= minLat && p.lat <= maxLat && p.lng >= minLng && p.lng <= maxLng)
+          .map((p) => p.id);
+        setSelectedIds(insideIds);
+        setSelectedTrecho(null);
+        setLassoStart(null);
+        setTool("select");
+      }
+      return;
+    }
+
     if (!project) return;
     setRequestError("");
     const equipConfig = TOOL_EQUIPMENT_CONFIG[activeTool] || TOOL_EQUIPMENT_CONFIG.pole;
@@ -1309,10 +1354,27 @@ export const WorkspaceGis = () => {
           custo_equipamento: point.custo_equipamento ?? 0,
         },
       ]);
+      if (trechos.length > 0 && poles.length + 1 >= 2) {
+        const mstResult = await apiRequest(
+          `/projetos/${projectId}/mst?id_usuario_autor=${session.id_usuario}`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              catalogo_cabos: buildCatalogoCabosPayload(),
+              ajustar_malha_viaria: snapEnabledRef.current,
+            }),
+          },
+        );
+        setDistanceMeters(mstResult.metragem_total);
+        setEstimatedCost(mstResult.custo_estimado);
+        setSavingsPercent(mstResult.economia_percentual ?? 0);
+        setIsGraphConnected(mstResult.grafo_conexo !== false);
+        setTrechos(mstResult.trechos_mst || []);
+      }
     } catch (error) {
       setRequestError(error.message);
     }
-  }, [poles.length, project, projectId, session.id_usuario]);
+  }, [poles, project, projectId, session.id_usuario, lassoStart, trechos.length, buildCatalogoCabosPayload]);
 
   const movePole = useCallback(async (id, { lat, lng }) => {
     const previousPosition = poles.find((pole) => pole.id === id);
@@ -1358,6 +1420,26 @@ export const WorkspaceGis = () => {
   }, [poles, projectId, session.id_usuario, trechos.length, buildCatalogoCabosPayload, snapEnabled]);
 
   const selectPole = useCallback((id, additive) => {
+    if (tool === "cable") {
+      if (!cableOriginId || cableOriginId === id) {
+        setCableOriginId(id);
+        setSelectedIds([id]);
+        setSelectedTrecho(null);
+      } else {
+        const matched = trechos.find(
+          (t) =>
+            (t.origem_id === cableOriginId && t.destino_id === id) ||
+            (t.origem_id === id && t.destino_id === cableOriginId),
+        );
+        setSelectedIds([cableOriginId, id]);
+        if (matched) {
+          setSelectedTrecho(matched);
+        }
+        setCableOriginId(null);
+        setTool("select");
+      }
+      return;
+    }
     setSelectedTrecho(null);
     setSelectedIds((current) => {
       if (!additive) return [id];
@@ -1365,11 +1447,13 @@ export const WorkspaceGis = () => {
         ? current.filter((entry) => entry !== id)
         : [...current, id];
     });
-  }, []);
+  }, [tool, cableOriginId, trechos]);
 
   const clearSelection = useCallback(() => {
     setSelectedIds([]);
     setSelectedTrecho(null);
+    setLassoStart(null);
+    setCableOriginId(null);
   }, []);
 
   const calculateTopology = useCallback(async (overrideSnap) => {
@@ -1393,6 +1477,7 @@ export const WorkspaceGis = () => {
       setDistanceMeters(result.metragem_total);
       setEstimatedCost(result.custo_estimado);
       setSavingsPercent(result.economia_percentual ?? 0);
+      setIsGraphConnected(result.grafo_conexo !== false);
       setTrechos(result.trechos_mst || []);
       setSelectedTrecho(null);
       setProject((current) => current ? {
@@ -1573,8 +1658,8 @@ export const WorkspaceGis = () => {
       <MapCanvas
         map={map}
         tool={tool}
-        poles={poles}
-        trechos={trechos}
+        poles={visiblePoles}
+        trechos={visibleTrechos}
         selectedIds={selectedIds}
         selectedTrecho={selectedTrecho}
         searchResult={searchResult}
@@ -1600,8 +1685,76 @@ export const WorkspaceGis = () => {
           onToggleSnap={handleToggleSnap}
         />
         {status === "ready" && (
-          <ToolHint tool={tool} selectedCount={selectedIds.length} snapEnabled={snapEnabled} />
+          <ToolHint
+            tool={tool}
+            selectedCount={selectedIds.length}
+            snapEnabled={snapEnabled}
+            lassoStart={lassoStart}
+            cableOriginId={cableOriginId}
+          />
         )}
+        {!isGraphConnected && poles.length >= 2 && (
+          <div
+            role="alert"
+            className="pointer-events-auto absolute top-28 left-88 z-20 max-w-md rounded-xl border border-amber-500/60 bg-amber-950/90 px-4 py-2.5 text-xs text-amber-200 shadow-xl"
+          >
+            <strong>Atenção (Ilhas Topológicas — Seção 2.10):</strong> Nem todos os ativos puderam ser conectados pelo Vão Máximo atual ({maxSpan} m). Aumente o vão máximo na barra lateral e recalcule a malha.
+          </div>
+        )}
+        {selectedIds.length > 0 && !selectedTrecho && (() => {
+          const selectedPolesList = poles.filter((p) => selectedIds.includes(p.id));
+          const firstPole = selectedPolesList[0];
+          const equipLabel =
+            firstPole?.id_tipo_equipamento === 1
+              ? "Caixa CTO Furukawa"
+              : firstPole?.id_tipo_equipamento === 2
+                ? "Caixa de Emenda CEO Furukawa"
+                : firstPole?.id_tipo_equipamento === 3
+                  ? "Switch / OLT Huawei"
+                  : "Poste de Passagem (Apoio)";
+          return (
+            <aside
+              className="pointer-events-auto absolute top-28 right-6 z-20 flex w-72 flex-col gap-2 rounded-xl border border-slate-700 bg-slate-900/95 p-4 text-xs text-slate-200 shadow-2xl"
+              aria-label="Detalhes do ativo selecionado"
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-cyan-400">
+                  {selectedPolesList.length === 1
+                    ? `${firstPole.name} (#${firstPole.id})`
+                    : `${selectedPolesList.length} ativos selecionados`}
+                </span>
+                <button
+                  type="button"
+                  onClick={clearSelection}
+                  className="text-slate-400 hover:text-white"
+                  aria-label="Limpar seleção"
+                >
+                  ✕
+                </button>
+              </div>
+              {selectedPolesList.length === 1 && firstPole && (
+                <>
+                  <p className="text-[11px] text-slate-300">
+                    Tipo: <strong>{equipLabel}</strong>
+                  </p>
+                  <div className="flex items-center justify-between border-t border-slate-800 pt-2">
+                    <span>Custo Unit.: <strong className="text-emerald-400">{Number(firstPole.custo_equipamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong></span>
+                    <span className="text-[10px] text-slate-400">{firstPole.lat.toFixed(5)}, {firstPole.lng.toFixed(5)}</span>
+                  </div>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => removeSelectedPoles(selectedIds)}
+                className="mt-1 w-full rounded-lg bg-red-600/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500"
+              >
+                {selectedPolesList.length === 1
+                  ? "Remover Ativo Selecionado (Del)"
+                  : `Remover ${selectedPolesList.length} Ativos (Del)`}
+              </button>
+            </aside>
+          );
+        })()}
         {selectedTrecho && (
           <aside
             className="pointer-events-auto absolute top-28 right-6 z-20 flex w-72 flex-col gap-1.5 rounded-xl border border-slate-700 bg-slate-900/95 p-4 text-xs text-slate-200 shadow-2xl"
@@ -1667,6 +1820,8 @@ export const WorkspaceGis = () => {
         maxSpan={maxSpan}
         onMaxSpanChange={setMaxSpan}
         snapEnabled={snapEnabled}
+        layerState={layerState}
+        onToggleLayer={toggleLayer}
       />
       {requestError && (
         <p className="workspace__status" role="alert">{requestError}</p>

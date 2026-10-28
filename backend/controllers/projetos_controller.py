@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Query, status
 from backend.controllers.auth_controller import obter_sessao_opcional
 from backend.models.schemas import (
     AtualizarCoordenadasPontoRequestSchema,
+    AtualizarStatusProjetoRequestSchema,
     CatalogosResponseSchema,
     CriarPontoRedeRequestSchema,
     CriarProjetoRequestSchema,
@@ -80,6 +81,26 @@ def criar_projeto(
         nome=payload.nome,
         id_empresa=payload.id_empresa,
         id_engenheiro=payload.id_engenheiro,
+        id_usuario_autor=autor_id,
+    )
+    return ProjetoResumoSchema(**asdict(projeto))
+
+
+@router.patch(
+    "/projetos/{id_projeto}/status",
+    response_model=ProjetoResumoSchema,
+    status_code=status.HTTP_200_OK,
+    summary="Atualiza o status do ciclo de vida do projeto (Em Planejamento, Em Execução, Concluído, Cancelado)",
+)
+def atualizar_status_projeto(
+    id_projeto: int,
+    payload: AtualizarStatusProjetoRequestSchema,
+    sessao: Optional[SessaoAutenticada] = Depends(obter_sessao_opcional),
+) -> ProjetoResumoSchema:
+    autor_id = sessao.id_usuario if sessao is not None else payload.id_usuario_autor
+    projeto = workspace_store.atualizar_status_projeto(
+        id_projeto=id_projeto,
+        novo_status=payload.novo_status.value,
         id_usuario_autor=autor_id,
     )
     return ProjetoResumoSchema(**asdict(projeto))

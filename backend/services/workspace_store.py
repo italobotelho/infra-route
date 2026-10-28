@@ -89,12 +89,14 @@ class WorkspaceStoreService:
     """
 
     _ARQUIVO_DEV_USUARIOS = Path(".cache/dev_users.json")
+    _ARQUIVO_DEV_WORKSPACE = Path(".cache/dev_workspace.json")
 
     def __init__(self, persistir_arquivo: bool = False) -> None:
         self._persistir_arquivo = persistir_arquivo
         self.resetar_estado_padrao()
         if self._persistir_arquivo:
             self._carregar_usuarios_dev()
+            self._carregar_workspace_dev()
 
     def _salvar_usuarios_dev(self) -> None:
         if not self._persistir_arquivo:
@@ -152,6 +154,129 @@ class WorkspaceStoreService:
                 self.vinculos.append(vinculo)
                 self.governanca.usuarios[uid] = usr
                 self.governanca.vinculos[(uid, 1)] = vinculo
+        except Exception:
+            pass
+
+    def _salvar_workspace_dev(self) -> None:
+        if not self._persistir_arquivo:
+            return
+        try:
+            self._ARQUIVO_DEV_WORKSPACE.parent.mkdir(parents=True, exist_ok=True)
+            dados = {
+                "proximo_id_projeto": self._proximo_id_projeto,
+                "proximo_id_ponto": self._proximo_id_ponto,
+                "projetos": [
+                    {
+                        "id_projeto": p.id_projeto,
+                        "nome": p.nome,
+                        "id_empresa": p.id_empresa,
+                        "id_engenheiro": p.id_engenheiro,
+                        "status": p.status.value if hasattr(p.status, "value") else str(p.status),
+                        "metragem_total": p.metragem_total,
+                        "custo_estimado": p.custo_estimado,
+                    }
+                    for p in self.projetos.values()
+                ],
+                "pontos_por_projeto": {
+                    str(pid): [
+                        {
+                            "id_ponto": pt.id_ponto,
+                            "descricao": pt.descricao,
+                            "latitude": pt.latitude,
+                            "longitude": pt.longitude,
+                            "status_fisico": pt.status_fisico,
+                            "status_ponto": pt.status_ponto,
+                            "id_tipo_equipamento": pt.id_tipo_equipamento,
+                            "custo_equipamento": pt.custo_equipamento,
+                        }
+                        for pt in pts
+                    ]
+                    for pid, pts in self.pontos_por_projeto.items()
+                },
+                "trechos_por_projeto": {
+                    str(pid): [
+                        {
+                            "id_trecho": tr.id_trecho,
+                            "origem_id": tr.origem_id,
+                            "origem_descricao": tr.origem_descricao,
+                            "destino_id": tr.destino_id,
+                            "destino_descricao": tr.destino_descricao,
+                            "id_projeto": tr.id_projeto,
+                            "id_tipo_cabo": tr.id_tipo_cabo,
+                            "modelo_cabo": tr.modelo_cabo,
+                            "distancia_metros": tr.distancia_metros,
+                            "custo_trecho": tr.custo_trecho,
+                            "geometria_wkt": tr.geometria_wkt,
+                            "caminho_coordenadas": list(tr.caminho_coordenadas),
+                        }
+                        for tr in trs
+                    ]
+                    for pid, trs in self.trechos_por_projeto.items()
+                },
+            }
+            self._ARQUIVO_DEV_WORKSPACE.write_text(
+                json.dumps(dados, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+
+    def _carregar_workspace_dev(self) -> None:
+        if not self._persistir_arquivo or not self._ARQUIVO_DEV_WORKSPACE.exists():
+            return
+        try:
+            dados = json.loads(self._ARQUIVO_DEV_WORKSPACE.read_text(encoding="utf-8"))
+            self._proximo_id_projeto = max(
+                self._proximo_id_projeto, int(dados.get("proximo_id_projeto", 3))
+            )
+            self._proximo_id_ponto = max(
+                self._proximo_id_ponto, int(dados.get("proximo_id_ponto", 300))
+            )
+            for item in dados.get("projetos", []):
+                pid = int(item["id_projeto"])
+                self.projetos[pid] = ProjetoDominio(
+                    id_projeto=pid,
+                    nome=item["nome"],
+                    id_empresa=int(item["id_empresa"]),
+                    id_engenheiro=int(item["id_engenheiro"]),
+                    status=StatusProjetoEnum(item["status"]),
+                    metragem_total=float(item.get("metragem_total", 0.0)),
+                    custo_estimado=float(item.get("custo_estimado", 0.0)),
+                )
+            for pid_str, pts in dados.get("pontos_por_projeto", {}).items():
+                pid = int(pid_str)
+                self.pontos_por_projeto[pid] = [
+                    PontoRede(
+                        id_ponto=int(pt["id_ponto"]),
+                        descricao=pt["descricao"],
+                        latitude=float(pt["latitude"]),
+                        longitude=float(pt["longitude"]),
+                        status_fisico=pt["status_fisico"],
+                        status_ponto=pt["status_ponto"],
+                        id_tipo_equipamento=pt.get("id_tipo_equipamento"),
+                        custo_equipamento=float(pt.get("custo_equipamento", 0.0)),
+                    )
+                    for pt in pts
+                ]
+            for pid_str, trs in dados.get("trechos_por_projeto", {}).items():
+                pid = int(pid_str)
+                self.trechos_por_projeto[pid] = [
+                    TrechoRedeMST(
+                        id_trecho=int(tr["id_trecho"]),
+                        origem_id=int(tr["origem_id"]),
+                        origem_descricao=tr["origem_descricao"],
+                        destino_id=int(tr["destino_id"]),
+                        destino_descricao=tr["destino_descricao"],
+                        id_projeto=int(tr["id_projeto"]),
+                        id_tipo_cabo=int(tr["id_tipo_cabo"]),
+                        modelo_cabo=tr["modelo_cabo"],
+                        distancia_metros=float(tr["distancia_metros"]),
+                        custo_trecho=float(tr["custo_trecho"]),
+                        geometria_wkt=tr["geometria_wkt"],
+                        caminho_coordenadas=list(tr.get("caminho_coordenadas", [])),
+                    )
+                    for tr in trs
+                ]
         except Exception:
             pass
 
@@ -619,7 +744,31 @@ class WorkspaceStoreService:
         self.projetos[novo_id] = validado
         self.pontos_por_projeto[novo_id] = []
         self.trechos_por_projeto[novo_id] = []
+        self._salvar_workspace_dev()
         return validado
+
+    def atualizar_status_projeto(
+        self,
+        id_projeto: int,
+        novo_status: str,
+        id_usuario_autor: int = 1,
+    ) -> ProjetoDominio:
+        projeto = self.obter_projeto(id_projeto=id_projeto, id_usuario_autor=id_usuario_autor)
+        self.governanca.validar_acesso_tenant(
+            id_usuario=id_usuario_autor,
+            id_empresa=projeto.id_empresa,
+            exigir_escrita=True,
+        )
+        status_enum = StatusProjetoEnum(novo_status)
+        atualizado = replace(projeto, status=status_enum)
+        self.projetos[id_projeto] = atualizado
+        self._registrar_evento_auditoria(
+            acao="PROJETO_STATUS_ALTERADO",
+            id_usuario=id_usuario_autor,
+            detalhes=f"Projeto #{id_projeto} ('{projeto.nome}') alterado para '{status_enum.value}'.",
+        )
+        self._salvar_workspace_dev()
+        return atualizado
 
     def adicionar_ponto_rede(
         self,
@@ -660,6 +809,7 @@ class WorkspaceStoreService:
         )
         self._proximo_id_ponto += 1
         self.pontos_por_projeto.setdefault(id_projeto, []).append(novo_ponto)
+        self._salvar_workspace_dev()
         return novo_ponto
 
     def atualizar_coordenadas_ponto(
@@ -683,6 +833,7 @@ class WorkspaceStoreService:
             if ponto.id_ponto == id_ponto:
                 atualizado = replace(ponto, latitude=latitude, longitude=longitude)
                 pontos[index] = atualizado
+                self._salvar_workspace_dev()
                 return atualizado
         raise RecursoNaoEncontradoError(
             f"Ponto {id_ponto} não encontrado no escopo do projeto {id_projeto}."
@@ -732,6 +883,7 @@ class WorkspaceStoreService:
         )
         self.projetos[id_projeto] = projeto_atualizado
         self.trechos_por_projeto[id_projeto] = list(resultado.trechos_mst)
+        self._salvar_workspace_dev()
         return resultado
 
     def aplicar_soft_delete_ponto(
@@ -772,6 +924,7 @@ class WorkspaceStoreService:
                 id_usuario_autor=id_usuario_autor,
             )
 
+        self._salvar_workspace_dev()
         return ponto_atualizado
 
 

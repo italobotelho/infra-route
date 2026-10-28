@@ -223,6 +223,9 @@ export const CurrentProjectsSection = () => {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState([]);
   const [page, setPage] = useState(1);
+  const [sortAsc, setSortAsc] = useState(true);
+  const [actionProject, setActionProject] = useState(null);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [projects, setProjects] = useState([]);
   const [projectName, setProjectName] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -259,14 +262,64 @@ export const CurrentProjectsSection = () => {
   const filteredProjects = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
-    if (!normalizedQuery) {
-      return projects;
-    }
+    const base = !normalizedQuery
+      ? projects
+      : projects.filter((project) =>
+          `${project.name} ${project.code} ${project.status}`.toLowerCase().includes(normalizedQuery),
+        );
 
-    return projects.filter((project) =>
-      `${project.name} ${project.code}`.toLowerCase().includes(normalizedQuery),
+    return [...base].sort((a, b) =>
+      sortAsc ? a.name.localeCompare(b.name, "pt-BR") : b.name.localeCompare(a.name, "pt-BR"),
     );
-  }, [projects, query]);
+  }, [projects, query, sortAsc]);
+
+  const ITEMS_PER_PAGE = 5;
+  const totalPages = Math.max(1, Math.ceil(filteredProjects.length / ITEMS_PER_PAGE));
+  const safePage = Math.min(page, totalPages);
+  const paginatedProjects = useMemo(() => {
+    const startIdx = (safePage - 1) * ITEMS_PER_PAGE;
+    return filteredProjects.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+  }, [filteredProjects, safePage]);
+
+  const updateProjectStatus = async (idProjeto, novoStatus) => {
+    setIsUpdatingStatus(true);
+    setError("");
+    try {
+      await apiRequest(`/projetos/${idProjeto}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          novo_status: novoStatus,
+          id_usuario_autor: session.id_usuario,
+        }),
+      });
+      await loadProjects();
+      setActionProject((curr) => (curr && curr.id_projeto === idProjeto ? { ...curr, status: novoStatus } : curr));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
+  const exportProjectReport = async (project) => {
+    setError("");
+    try {
+      const detail = await apiRequest(
+        `/projetos/${project.id_projeto}?id_usuario_autor=${session.id_usuario}`,
+      );
+      const blob = new Blob([JSON.stringify(detail, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `relatorio-projeto-${project.id_projeto}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
 
   const allSelected =
     filteredProjects.length > 0 &&
@@ -522,16 +575,27 @@ export const CurrentProjectsSection = () => {
                   key={column.label}
                   className={`flex items-center gap-2 relative flex-1 grow ${column.className}`}
                 >
-                  <span className="leading-[15px] whitespace-pre-line relative flex-1 mt-[-1.00px] [font-family:'Inter-SemiBold',Helvetica] font-semibold text-slate-600 text-[10px] tracking-[0]">
-                    {column.label}
-                  </span>
-                  {column.label === "Nome" && (
-                    <span className="relative w-3 h-3" aria-hidden="true">
-                      <img
-                        className="absolute w-[86.25%] h-[86.25%] top-[13.75%] left-[13.75%]"
-                        alt=""
-                        src={image}
-                      />
+                  {column.label === "Nome" ? (
+                    <button
+                      type="button"
+                      onClick={() => setSortAsc((prev) => !prev)}
+                      className="flex items-center gap-2 bg-transparent border-0 p-0 cursor-pointer text-left"
+                      title="Ordenar por nome"
+                    >
+                      <span className="leading-[15px] whitespace-pre-line relative flex-1 mt-[-1.00px] [font-family:'Inter-SemiBold',Helvetica] font-semibold text-slate-600 text-[10px] tracking-[0]">
+                        {column.label}
+                      </span>
+                      <span className="relative w-3 h-3" aria-hidden="true">
+                        <img
+                          className={`absolute w-[86.25%] h-[86.25%] top-[13.75%] left-[13.75%] transition-transform ${sortAsc ? "" : "rotate-180"}`}
+                          alt=""
+                          src={image}
+                        />
+                      </span>
+                    </button>
+                  ) : (
+                    <span className="leading-[15px] whitespace-pre-line relative flex-1 mt-[-1.00px] [font-family:'Inter-SemiBold',Helvetica] font-semibold text-slate-600 text-[10px] tracking-[0]">
+                      {column.label}
                     </span>
                   )}
                 </div>
@@ -543,9 +607,9 @@ export const CurrentProjectsSection = () => {
               <p className="p-6 text-sm text-red-600" role="alert">{error}</p>
             ) : filteredProjects.length === 0 ? (
               <p className="p-6 text-sm text-slate-600">Nenhum projeto encontrado.</p>
-            ) : filteredProjects.map((project, index) => {
+            ) : paginatedProjects.map((project, index) => {
               const ActionIcon = project.artwork.action;
-              const calendarIcon = calendarIcons[index];
+              const calendarIcon = calendarIcons[index % calendarIcons.length];
 
               return (
                 <div
@@ -608,7 +672,8 @@ export const CurrentProjectsSection = () => {
                     <button
                       type="button"
                       aria-label={`Ações de ${project.name}`}
-                      className="p-0 bg-transparent border-0"
+                      onClick={() => setActionProject(project)}
+                      className="p-0 bg-transparent border-0 cursor-pointer"
                     >
                       <ActionIcon className="!relative !w-8 !h-8" />
                     </button>
@@ -620,7 +685,7 @@ export const CurrentProjectsSection = () => {
         </div>
         <div className="flex h-14 items-center justify-between px-4 py-0 relative self-stretch w-full bg-white rounded-lg overflow-hidden border border-solid border-slate-200 shadow-[0px_4px_16px_#0f172a0d]">
           <p className="relative w-fit [font-family:'Inter-Regular',Helvetica] font-normal text-slate-600 text-xs tracking-[0] leading-[normal]">
-            Exibindo {filteredProjects.length} de {projects.length} projetos
+            Exibindo {paginatedProjects.length} de {filteredProjects.length} projetos
           </p>
           <nav
             aria-label="Paginação"
@@ -640,26 +705,26 @@ export const CurrentProjectsSection = () => {
             </button>
             <button
               type="button"
-              onClick={() => setPage(1)}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
               className="inline-flex min-w-8 h-8 items-center justify-center px-2.5 py-0 relative flex-[0_0_auto] bg-white rounded-md overflow-hidden"
             >
               <span className="[font-family:'Inter-Medium',Helvetica] font-medium text-slate-600 relative w-fit text-[11px] tracking-[0] leading-[normal] whitespace-nowrap">
                 Anterior
               </span>
             </button>
-            {[1, 2, 3].map((item) => (
+            {Array.from({ length: totalPages }, (_, idx) => idx + 1).map((item) => (
               <button
                 type="button"
                 key={item}
                 onClick={() => setPage(item)}
-                aria-current={page === item ? "page" : undefined}
+                aria-current={safePage === item ? "page" : undefined}
                 className={`inline-flex min-w-8 h-8 items-center justify-center px-2.5 py-0 relative flex-[0_0_auto] rounded-md overflow-hidden ${
-                  page === item ? "bg-blue-600" : "bg-white"
+                  safePage === item ? "bg-blue-600" : "bg-white"
                 }`}
               >
                 <span
                   className={`[font-family:'Inter-SemiBold',Helvetica] font-semibold relative w-fit text-[11px] tracking-[0] leading-[normal] whitespace-nowrap ${
-                    page === item ? "text-white" : "text-slate-600"
+                    safePage === item ? "text-white" : "text-slate-600"
                   }`}
                 >
                   {item}
@@ -669,7 +734,7 @@ export const CurrentProjectsSection = () => {
 
             <button
               type="button"
-              onClick={() => setPage((current) => Math.min(3, current + 1))}
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
               className="inline-flex min-w-8 h-8 items-center justify-center px-2.5 py-0 relative flex-[0_0_auto] bg-white rounded-md overflow-hidden"
             >
               <span className="[font-family:'Inter-Medium',Helvetica] font-medium text-slate-600 relative w-fit text-[11px] tracking-[0] leading-[normal] whitespace-nowrap">
@@ -678,7 +743,7 @@ export const CurrentProjectsSection = () => {
             </button>
             <button
               type="button"
-              onClick={() => setPage((current) => Math.min(3, current + 1))}
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
               aria-label="Próxima página"
               className="relative w-3.5 h-3.5 bg-transparent border-0 p-0"
             >
@@ -738,6 +803,70 @@ export const CurrentProjectsSection = () => {
               </button>
             </div>
           </form>
+        </div>
+      )}
+      {actionProject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div
+            role="dialog"
+            aria-label={`Gerenciar ${actionProject.name}`}
+            className="w-full max-w-md space-y-4 rounded-xl bg-white p-6 shadow-xl"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">{actionProject.name}</h2>
+                <p className="text-xs text-slate-500">
+                  {actionProject.code} · Status atual: <strong>{actionProject.status}</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActionProject(null)}
+                className="text-slate-400 hover:text-slate-700"
+                aria-label="Fechar ações do projeto"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-2 border-t border-slate-100 pt-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Alterar Status (Governança Seção 3.3)
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {["Em Planejamento", "Em Execução", "Concluído", "Cancelado"].map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    disabled={isUpdatingStatus || actionProject.status === st}
+                    onClick={() => updateProjectStatus(actionProject.id_projeto, st)}
+                    className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                      actionProject.status === st
+                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    {st}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 border-t border-slate-100 pt-3">
+              <button
+                type="button"
+                onClick={() => navigate(`/workspace?id_projeto=${actionProject.id_projeto}`)}
+                className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-blue-700"
+              >
+                Abrir no Mapa GIS →
+              </button>
+              <button
+                type="button"
+                onClick={() => exportProjectReport(actionProject)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Exportar Memorial Descritivo (JSON) ⬇
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </main>

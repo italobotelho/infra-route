@@ -12,6 +12,7 @@ import {
   formatarCrea,
   validarCrea,
   avaliarSenha,
+  validarSenha,
 } from "./validators";
 
 function CampoErro({ children }) {
@@ -36,7 +37,7 @@ export default function Cadastro() {
     telefone: validarTelefone(form.telefone),
     cpf: validarCpf(form.cpf),
     crea: validarCrea(form.crea),
-    senha: forcaSenha === "Fraca" ? "A senha precisa ser pelo menos média." : "",
+    senha: validarSenha(form.senha),
     termo: form.termo ? "" : "Você precisa aceitar os termos.",
   };
 
@@ -189,6 +190,7 @@ export default function Cadastro() {
                   aria-invalid={Boolean((tocados.telefone || enviado) && erros.telefone)}
                   onChange={(e) => atualizar("telefone", formatarTelefone(e.target.value))}
                 />
+                <CampoErro>{(tocados.telefone || enviado) && erros.telefone}</CampoErro>
               </div>
 
               <div className="flex flex-col gap-2">
