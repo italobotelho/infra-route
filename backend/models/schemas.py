@@ -313,10 +313,10 @@ class ProjetoDetalhadoSchema(ProjetoResumoSchema):
 
 
 class RequisicaoCalculoMSTSchema(BaseModel):
-    pontos: List[PontoRedeSchema] = Field(
-        ...,
+    pontos: Optional[List[PontoRedeSchema]] = Field(
+        default=None,
         min_length=1,
-        description="Lista de nós (Ponto_Rede) vinculados ao projeto",
+        description="Lista de nós (Ponto_Rede) vinculados ao projeto; se None, utiliza os pontos armazenados no projeto",
     )
     catalogo_cabos: List[TipoCaboSchema] = Field(
         default_factory=lambda: [
@@ -351,6 +351,10 @@ class RequisicaoCalculoMSTSchema(BaseModel):
         gt=0,
         description="ID_Ponto raiz para iniciar o Algoritmo de Prim (opcional)",
     )
+    ajustar_malha_viaria: bool = Field(
+        default=False,
+        description="Se True (Snap ON), roteia as arestas candidatas pelas ruas e esquinas antes de extrair a AGM",
+    )
 
 
 class ResultadoMSTProjetoSchema(BaseModel):
@@ -369,3 +373,11 @@ class ResultadoMSTProjetoSchema(BaseModel):
     custo_total_equipamentos: float
     trechos_mst: List[TrechoRedeMSTSchema]
     lista_adjacencia: Dict[int, List[VizinhoAdjacenciaSchema]]
+    metragem_malha_candidata: float = Field(
+        default=0.0,
+        description="Metragem acumulada de todas as arestas candidatas viáveis da malha antes da otimização",
+    )
+    economia_percentual: float = Field(
+        default=0.0,
+        description="Percentual de economia de cabo proporcionado pela AGM (Prim) em relação à malha candidata",
+    )

@@ -168,6 +168,26 @@ async function lookupCep(cep) {
   return data.erro ? null : data;
 }
 
+const TOOL_EQUIPMENT_CONFIG = {
+  pole: { id_tipo_equipamento: null, prefix: "Poste" },
+  cto: { id_tipo_equipamento: 1, prefix: "CTO" },
+  ceo: { id_tipo_equipamento: 2, prefix: "CEO" },
+  olt: { id_tipo_equipamento: 3, prefix: "OLT/POP" },
+};
+
+const CABLE_PRESETS = {
+  "AS-80 12 FO": { id_cabo: 1, descricao_modelo: "Fibra AS-80 12FO", price: 4.5, maxSpan: 2000, color: "#38bdf8" },
+  "AS-120 24 FO": { id_cabo: 2, descricao_modelo: "Fibra AS-120 24FO", price: 6.8, maxSpan: 5000, color: "#a855f7" },
+  "AS-200 48 FO": { id_cabo: 3, descricao_modelo: "Fibra AS-200 48FO", price: 9.5, maxSpan: 10000, color: "#f59e0b" },
+};
+
+function getCableStrokeColor(trecho) {
+  const modelo = (trecho?.modelo_cabo || "").toUpperCase();
+  if (modelo.includes("AS-200") || trecho?.id_tipo_cabo === 3) return "#f59e0b";
+  if (modelo.includes("AS-120") || trecho?.id_tipo_cabo === 2) return "#a855f7";
+  return "#38bdf8";
+}
+
 function createPoleElement() {
   const element = document.createElement("div");
   element.className = "pole-marker";
@@ -177,9 +197,14 @@ function createPoleElement() {
 
 // A aparência vem do CSS (.pole-marker, .pole-marker--selected e
 // [data-tool] para o cursor). Aqui só alternamos classes e atributos.
-function applyPoleStyle(element, { selected, tool }) {
+function applyPoleStyle(element, { selected, tool, idTipoEquipamento }) {
   element.classList.toggle("pole-marker--selected", selected);
   element.dataset.tool = tool;
+  if (idTipoEquipamento) {
+    element.dataset.equip = String(idTipoEquipamento);
+  } else {
+    delete element.dataset.equip;
+  }
 }
 
 function createSearchElement() {
@@ -327,6 +352,7 @@ function MapCanvas({
   poles,
   trechos = [],
   selectedIds,
+  selectedTrecho,
   searchResult,
   onMapReady,
   onViewChange,
@@ -334,6 +360,7 @@ function MapCanvas({
   onAddPole,
   onMovePole,
   onSelectPole,
+  onSelectTrecho,
   onClearSelection,
 }) {
   const containerRef = useRef(null);
@@ -406,15 +433,16 @@ function MapCanvas({
   // Cursor do mapa de acordo com a ferramenta.
   useEffect(() => {
     if (!map) return;
-    map.setOptions({ draggableCursor: tool === "pole" ? "crosshair" : null });
+    const isPlacementTool = Boolean(TOOL_EQUIPMENT_CONFIG[tool]);
+    map.setOptions({ draggableCursor: isPlacementTool ? "crosshair" : null });
   }, [map, tool]);
 
-  // Clique no mapa: adiciona poste (P) ou limpa a seleção (V).
+  // Clique no mapa: adiciona ativo (P, C, E, O) ou limpa a seleção (V).
   useEffect(() => {
     if (!map) return;
     const listener = map.addListener("click", (event) => {
-      if (tool === "pole" && event.latLng) {
-        onAddPole(event.latLng.toJSON());
+      if (TOOL_EQUIPMENT_CONFIG[tool] && event.latLng) {
+        onAddPole(event.latLng.toJSON(), tool);
       } else if (tool === "select" && !event.domEvent?.shiftKey) {
         onClearSelection();
       }
@@ -429,7 +457,7 @@ function MapCanvas({
     const currentIds = new Set(poles.map((pole) => pole.id));
 
     Object.keys(registry).forEach((id) => {
-      if (!currentIds.has(id)) {
+      if (!currentIds.has(Number(id)) && !currentIds.has(id)) {
         registry[id].overlay.setMap(null);
         delete registry[id];
       }
@@ -451,12 +479,12 @@ function MapCanvas({
       applyPoleStyle(entry.element, {
         selected: selectedIds.includes(pole.id),
         tool,
+        idTipoEquipamento: pole.id_tipo_equipamento,
       });
     });
   }, [map, poles, selectedIds, tool]);
 
-  // Resultado da busca: marcador âmbar e movimento da câmera.
-  // Sincroniza os trechos (AGM/Prim) com polilinhas no mapa.
+  // Sincroniza os trechos (AGM/Prim) com polilinhas interativas no mapa.
   useEffect(() => {
     polylinesRef.current.forEach((line) => line.setMap(null));
     polylinesRef.current = [];
@@ -467,21 +495,44 @@ function MapCanvas({
       const origin = polesById.get(trecho.origem_id ?? trecho.id_ponto_origem);
       const dest = polesById.get(trecho.destino_id ?? trecho.id_ponto_destino);
       if (!origin || !dest) return;
+
+      const rawCoords = Array.isArray(trecho.caminho_coordenadas)
+        ? trecho.caminho_coordenadas
+        : [];
+      const path =
+        rawCoords.length >= 2
+          ? [
+              { lat: origin.lat, lng: origin.lng },
+              ...rawCoords.slice(1, -1).map((c) => ({ lat: Number(c.lat), lng: Number(c.lng) })),
+              { lat: dest.lat, lng: dest.lng },
+            ]
+          : [
+              { lat: origin.lat, lng: origin.lng },
+              { lat: dest.lat, lng: dest.lng },
+            ];
+
+      const isSelected = selectedTrecho?.id_trecho === trecho.id_trecho;
+      const baseColor = getCableStrokeColor(trecho);
+
       const line = new window.google.maps.Polyline({
-        path: [
-          { lat: origin.lat, lng: origin.lng },
-          { lat: dest.lat, lng: dest.lng },
-        ],
-        geodesic: true,
-        strokeColor: "#38bdf8",
-        strokeOpacity: 0.9,
-        strokeWeight: 3,
-        clickable: false,
+        path,
+        geodesic: path.length <= 2,
+        strokeColor: isSelected ? "#22d3ee" : baseColor,
+        strokeOpacity: isSelected ? 1.0 : 0.92,
+        strokeWeight: isSelected ? 5 : 3.5,
+        clickable: true,
+        zIndex: isSelected ? 10 : 2,
         map,
       });
+
+      line.addListener("click", (event) => {
+        if (event?.stop) event.stop();
+        onSelectTrecho?.(trecho);
+      });
+
       polylinesRef.current.push(line);
     });
-  }, [map, poles, trechos]);
+  }, [map, poles, trechos, selectedTrecho, onSelectTrecho]);
 
   useEffect(() => {
     if (!map) return;
@@ -631,18 +682,24 @@ function ToolBar({ selectedTool, onSelectTool, snapEnabled, onToggleSnap }) {
   );
 }
 
-function ToolHint({ tool, selectedCount }) {
+function ToolHint({ tool, selectedCount, snapEnabled }) {
   let text;
   if (tool === "pole") {
-    text = "Clique no mapa para posicionar um poste · Esc para voltar";
+    text = "Clique no mapa para posicionar um Poste de passagem · Esc para voltar";
+  } else if (tool === "cto") {
+    text = "Clique no mapa para posicionar uma Caixa CTO (R$ 380,00) · Esc para voltar";
+  } else if (tool === "ceo") {
+    text = "Clique no mapa para posicionar uma Caixa de Emenda CEO (R$ 520,00) · Esc para voltar";
+  } else if (tool === "olt") {
+    text = "Clique no mapa para posicionar um Switch / OLT POP (R$ 2.450,00) · Esc para voltar";
   } else if (tool === "select") {
     text =
       selectedCount > 0
         ? `${selectedCount} selecionado${selectedCount > 1 ? "s" : ""} · Delete remove · arraste para mover`
-        : "Clique em um poste para selecionar · Shift para vários";
+        : `Clique em um ativo ou trecho óptico para inspecionar · Modo ${snapEnabled ? "Snap Viário ON" : "Geodésico Direto OFF"}`;
   } else {
     const item = toolItems.find((entry) => entry.id === tool);
-    text = `${item?.label.split(" · ")[0]} ainda não está disponível`;
+    text = `${item?.label.split(" · ")[0]} em modo de visualização`;
   }
 
   return (
@@ -659,7 +716,12 @@ function ToolHint({ tool, selectedCount }) {
 /* Painéis sobre o mapa                                                */
 /* ------------------------------------------------------------------ */
 
-function MapStats({ poleCount, distanceMeters, estimatedCost }) {
+function MapStats({ poles, distanceMeters, estimatedCost, savingsPercent }) {
+  const purePoles = poles.filter((p) => !p.id_tipo_equipamento).length;
+  const ctoCount = poles.filter((p) => p.id_tipo_equipamento === 1).length;
+  const ceoCount = poles.filter((p) => p.id_tipo_equipamento === 2).length;
+  const oltCount = poles.filter((p) => p.id_tipo_equipamento === 3).length;
+
   return (
     <aside className="map-stats">
       <div className="map-stats__group">
@@ -671,7 +733,7 @@ function MapStats({ poleCount, distanceMeters, estimatedCost }) {
             {(distanceMeters / 1000).toFixed(2)}
           </strong>
           <span className="map-stats__unit">
-            km
+            km ({distanceMeters.toFixed(1)} m)
           </span>
         </span>
       </div>
@@ -687,12 +749,12 @@ function MapStats({ poleCount, distanceMeters, estimatedCost }) {
       <span className="divider-vertical" aria-hidden="true" />
       <div className="map-stats__group map-stats__group--counts">
         <span className="map-stats__counts">
-          {poleCount} {poleCount === 1 ? "Poste" : "Postes"} | 0 CTOs | 0 CEOs
+          {purePoles} {purePoles === 1 ? "Poste" : "Postes"} | {ctoCount} CTOs | {ceoCount} CEOs{oltCount > 0 ? ` | ${oltCount} OLTs` : ""}
         </span>
         <span className="map-stats__savings">
           <img className="icon-13" src={xdefault} alt="" />
           <span className="map-stats__savings-text">
-            0% economia de material
+            {Number(savingsPercent || 0).toFixed(1)}% economia de material (AGM Prim)
           </span>
         </span>
       </div>
@@ -826,6 +888,7 @@ function LayerSwitch({ layer, enabled, onToggle }) {
 
 function Sidebar({
   poleCount,
+  trechoCount,
   searchEnabled,
   onSearch,
   onClearSearch,
@@ -833,6 +896,13 @@ function Sidebar({
   canCalculate,
   onCalculate,
   isCalculating,
+  cableType,
+  onCableTypeChange,
+  cablePrice,
+  onCablePriceChange,
+  maxSpan,
+  onMaxSpanChange,
+  snapEnabled,
 }) {
   const [search, setSearch] = useState("");
   const [searchState, setSearchState] = useState({
@@ -842,9 +912,6 @@ function Sidebar({
   const [layerState, setLayerState] = useState(
     layers.map((layer) => layer.enabled),
   );
-  const [cableType, setCableType] = useState("AS-80 12 FO");
-  const [cablePrice, setCablePrice] = useState(8.5);
-  const [maxSpan, setMaxSpan] = useState(45);
 
   const submitSearch = async (event) => {
     event.preventDefault();
@@ -895,7 +962,7 @@ function Sidebar({
               {projectName || "Carregando projeto..."}
             </h2>
             <span className="project__badge">
-              Rascunho
+              {snapEnabled ? "Traçado Viário (Snap ON)" : "Geodésico Direto (Snap OFF)"}
             </span>
             <Link className="mt-2 text-xs text-blue-600 hover:underline" to="/projetos">
               ← Voltar aos projetos
@@ -956,8 +1023,9 @@ function Sidebar({
             <div className="panel-note">
               <img className="icon-13" src={default17} alt="" />
               <p className="panel-note__text">
-                Nenhum ativo carregado. As camadas habilitadas permanecem
-                vazias.
+                {poleCount > 0
+                  ? `${poleCount} ativo(s) e ${trechoCount} enlace(s) óptico(s) renderizados no mapa.`
+                  : "Nenhum ativo carregado. As camadas habilitadas permanecem vazias."}
               </p>
             </div>
           </section>
@@ -982,12 +1050,12 @@ function Sidebar({
               <span className="field__wrap">
                 <select
                   value={cableType}
-                  onChange={(event) => setCableType(event.target.value)}
+                  onChange={(event) => onCableTypeChange(event.target.value)}
                   className="field__control"
                 >
-                  <option>AS-80 12 FO</option>
-                  <option>AS-120 24 FO</option>
-                  <option>AS-200 48 FO</option>
+                  <option value="AS-80 12 FO">AS-80 12 FO</option>
+                  <option value="AS-120 24 FO">AS-120 24 FO</option>
+                  <option value="AS-200 48 FO">AS-200 48 FO</option>
                 </select>
                 <img
                   className="field__chevron"
@@ -1007,7 +1075,7 @@ function Sidebar({
                     min="0"
                     step="0.5"
                     value={cablePrice}
-                    onChange={(event) => setCablePrice(event.target.value)}
+                    onChange={(event) => onCablePriceChange(event.target.value)}
                     className="field__control field__control--unit-sm"
                     aria-label="Preço do cabo por metro"
                   />
@@ -1025,7 +1093,7 @@ function Sidebar({
                     type="number"
                     min="1"
                     value={maxSpan}
-                    onChange={(event) => setMaxSpan(event.target.value)}
+                    onChange={(event) => onMaxSpanChange(event.target.value)}
                     className="field__control field__control--unit-md"
                     aria-label="Vão máximo em metros"
                   />
@@ -1043,13 +1111,13 @@ function Sidebar({
             <span className="sidebar__status-text">
               {poleCount === 0
                 ? "Aguardando inserção de elementos"
-                : `${poleCount} ${poleCount === 1 ? "poste inserido" : "postes inseridos"}`}
+                : `${poleCount} ${poleCount === 1 ? "ativo inserido" : "ativos inseridos"} · ${trechoCount} ${trechoCount === 1 ? "trecho" : "trechos"}`}
             </span>
           </div>
           <button
             type="button"
             className="primary-button"
-            onClick={onCalculate}
+            onClick={() => onCalculate()}
             disabled={!canCalculate || isCalculating}
           >
             {isCalculating ? "Calculando..." : "Calcular Malha Otimizada ⚡"}
@@ -1088,15 +1156,54 @@ export const WorkspaceGis = () => {
   const [view, setView] = useState({ zoom: DEFAULT_ZOOM, lat: MAP_CENTER.lat });
   const [tool, setTool] = useState("select");
   const [snapEnabled, setSnapEnabled] = useState(true);
+  const snapEnabledRef = useRef(true);
+  snapEnabledRef.current = snapEnabled;
   const [poles, setPoles] = useState([]);
   const [trechos, setTrechos] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
+  const [selectedTrecho, setSelectedTrecho] = useState(null);
   const [searchResult, setSearchResult] = useState(null);
   const [project, setProject] = useState(null);
   const [distanceMeters, setDistanceMeters] = useState(0);
   const [estimatedCost, setEstimatedCost] = useState(0);
+  const [savingsPercent, setSavingsPercent] = useState(0);
+  const [cableType, setCableType] = useState("AS-80 12 FO");
+  const [cablePrice, setCablePrice] = useState(4.5);
+  const [maxSpan, setMaxSpan] = useState(2000);
   const [requestError, setRequestError] = useState("");
   const [isCalculating, setIsCalculating] = useState(false);
+
+  const handleCableTypeChange = useCallback((nextType) => {
+    setCableType(nextType);
+    const preset = CABLE_PRESETS[nextType];
+    if (preset) {
+      setCablePrice(preset.price);
+      setMaxSpan(preset.maxSpan);
+    }
+  }, []);
+
+  const buildCatalogoCabosPayload = useCallback(() => {
+    const selectedPreset = CABLE_PRESETS[cableType] || CABLE_PRESETS["AS-80 12 FO"];
+    const parsedPrice = Number(cablePrice);
+    const parsedSpan = Number(maxSpan);
+    const customCable = {
+      id_cabo: selectedPreset.id_cabo,
+      descricao_modelo: selectedPreset.descricao_modelo,
+      custo_por_metro: Number.isFinite(parsedPrice) && parsedPrice >= 0 ? parsedPrice : selectedPreset.price,
+      limite_distancia_metros: Number.isFinite(parsedSpan) && parsedSpan > 0 ? parsedSpan : selectedPreset.maxSpan,
+    };
+
+    const fallbackCables = Object.values(CABLE_PRESETS)
+      .filter((preset) => preset.id_cabo !== customCable.id_cabo && preset.maxSpan > customCable.limite_distancia_metros)
+      .map((preset) => ({
+        id_cabo: preset.id_cabo,
+        descricao_modelo: preset.descricao_modelo,
+        custo_por_metro: Math.max(preset.price, customCable.custo_por_metro + 0.01),
+        limite_distancia_metros: preset.maxSpan,
+      }));
+
+    return [customCable, ...fallbackCables];
+  }, [cableType, cablePrice, maxSpan]);
 
   useEffect(() => {
     if (!Number.isInteger(projectId) || projectId <= 0) {
@@ -1112,20 +1219,44 @@ export const WorkspaceGis = () => {
           `/projetos/${projectId}?id_usuario_autor=${session.id_usuario}`,
         );
         if (cancelled) return;
+        const activePoints = (result.pontos || []).filter(
+          (point) => point.status_ponto === "Ativo",
+        );
         setProject(result);
         setDistanceMeters(result.metragem_total);
         setEstimatedCost(result.custo_estimado);
         setTrechos(result.trechos || []);
         setPoles(
-          result.pontos
-            .filter((point) => point.status_ponto === "Ativo")
-            .map((point) => ({
-              id: point.id_ponto,
-              name: point.descricao,
-              lat: point.latitude,
-              lng: point.longitude,
-            })),
+          activePoints.map((point) => ({
+            id: point.id_ponto,
+            name: point.descricao,
+            lat: point.latitude,
+            lng: point.longitude,
+            id_tipo_equipamento: point.id_tipo_equipamento ?? null,
+            custo_equipamento: point.custo_equipamento ?? 0,
+          })),
         );
+
+        // Se o projeto abriu com Snap ON ativo mas os trechos salvos ainda estão em linha reta (2 vértices),
+        // ou para sincronizar economia_percentual e o traçado viário inicial automaticamente:
+        if (snapEnabledRef.current && activePoints.length >= 2) {
+          const mstResult = await apiRequest(
+            `/projetos/${projectId}/mst?id_usuario_autor=${session.id_usuario}`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                catalogo_cabos: buildCatalogoCabosPayload(),
+                ajustar_malha_viaria: true,
+              }),
+            },
+          );
+          if (!cancelled) {
+            setDistanceMeters(mstResult.metragem_total);
+            setEstimatedCost(mstResult.custo_estimado);
+            setSavingsPercent(mstResult.economia_percentual ?? 0);
+            setTrechos(mstResult.trechos_mst || []);
+          }
+        }
       } catch (error) {
         if (!cancelled) setRequestError(error.message);
       }
@@ -1145,20 +1276,25 @@ export const WorkspaceGis = () => {
 
   const selectTool = useCallback((toolId) => {
     setTool(toolId);
-    if (toolId !== "select") setSelectedIds([]);
+    if (toolId !== "select") {
+      setSelectedIds([]);
+      setSelectedTrecho(null);
+    }
   }, []);
 
-  const addPole = useCallback(async ({ lat, lng }) => {
+  const addPole = useCallback(async ({ lat, lng }, activeTool = "pole") => {
     if (!project) return;
     setRequestError("");
+    const equipConfig = TOOL_EQUIPMENT_CONFIG[activeTool] || TOOL_EQUIPMENT_CONFIG.pole;
     try {
       const point = await apiRequest(`/projetos/${projectId}/pontos`, {
         method: "POST",
         body: JSON.stringify({
-          descricao: `Ponto ${poles.length + 1}`,
+          descricao: `${equipConfig.prefix} #${poles.length + 1}`,
           latitude: lat,
           longitude: lng,
           status_fisico: "Projetado",
+          id_tipo_equipamento: equipConfig.id_tipo_equipamento,
           id_usuario_autor: session.id_usuario,
         }),
       });
@@ -1169,6 +1305,8 @@ export const WorkspaceGis = () => {
           name: point.descricao,
           lat: point.latitude,
           lng: point.longitude,
+          id_tipo_equipamento: point.id_tipo_equipamento ?? null,
+          custo_equipamento: point.custo_equipamento ?? 0,
         },
       ]);
     } catch (error) {
@@ -1192,6 +1330,23 @@ export const WorkspaceGis = () => {
           id_usuario_autor: session.id_usuario,
         }),
       });
+      if (trechos.length > 0 && poles.length >= 2) {
+        const catalogoCabos = buildCatalogoCabosPayload();
+        const mstResult = await apiRequest(
+          `/projetos/${projectId}/mst?id_usuario_autor=${session.id_usuario}`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              catalogo_cabos: catalogoCabos,
+              ajustar_malha_viaria: snapEnabled,
+            }),
+          },
+        );
+        setDistanceMeters(mstResult.metragem_total);
+        setEstimatedCost(mstResult.custo_estimado);
+        setSavingsPercent(mstResult.economia_percentual ?? 0);
+        setTrechos(mstResult.trechos_mst || []);
+      }
     } catch (error) {
       setPoles((current) => current.map((pole) => (
         pole.id === id
@@ -1200,9 +1355,10 @@ export const WorkspaceGis = () => {
       )));
       setRequestError(error.message);
     }
-  }, [poles, projectId, session.id_usuario]);
+  }, [poles, projectId, session.id_usuario, trechos.length, buildCatalogoCabosPayload, snapEnabled]);
 
   const selectPole = useCallback((id, additive) => {
+    setSelectedTrecho(null);
     setSelectedIds((current) => {
       if (!additive) return [id];
       return current.includes(id)
@@ -1211,7 +1367,54 @@ export const WorkspaceGis = () => {
     });
   }, []);
 
-  const clearSelection = useCallback(() => setSelectedIds([]), []);
+  const clearSelection = useCallback(() => {
+    setSelectedIds([]);
+    setSelectedTrecho(null);
+  }, []);
+
+  const calculateTopology = useCallback(async (overrideSnap) => {
+    const useStreetSnap =
+      typeof overrideSnap === "boolean" ? overrideSnap : snapEnabledRef.current;
+    setIsCalculating(true);
+    setRequestError("");
+    try {
+      const catalogoCabos = buildCatalogoCabosPayload();
+      const result = await apiRequest(
+        `/projetos/${projectId}/mst?id_usuario_autor=${session.id_usuario}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            catalogo_cabos: catalogoCabos,
+            ajustar_malha_viaria: useStreetSnap,
+          }),
+        },
+      );
+
+      setDistanceMeters(result.metragem_total);
+      setEstimatedCost(result.custo_estimado);
+      setSavingsPercent(result.economia_percentual ?? 0);
+      setTrechos(result.trechos_mst || []);
+      setSelectedTrecho(null);
+      setProject((current) => current ? {
+        ...current,
+        metragem_total: result.metragem_total,
+        custo_estimado: result.custo_estimado,
+      } : current);
+    } catch (error) {
+      setRequestError(error.message);
+    } finally {
+      setIsCalculating(false);
+    }
+  }, [projectId, session.id_usuario, buildCatalogoCabosPayload]);
+
+  const handleToggleSnap = useCallback(() => {
+    const nextSnap = !snapEnabledRef.current;
+    snapEnabledRef.current = nextSnap;
+    setSnapEnabled(nextSnap);
+    if (trechos.length > 0 && poles.length >= 2) {
+      calculateTopology(nextSnap);
+    }
+  }, [trechos.length, poles.length, calculateTopology]);
 
   const removeSelectedPoles = useCallback(async (ids) => {
     setRequestError("");
@@ -1227,42 +1430,28 @@ export const WorkspaceGis = () => {
           }),
         },
       )));
+      const catalogoCabos = buildCatalogoCabosPayload();
       const result = await apiRequest(
         `/projetos/${projectId}/mst?id_usuario_autor=${session.id_usuario}`,
-        { method: "POST", body: "null" },
+        {
+          method: "POST",
+          body: JSON.stringify({
+            catalogo_cabos: catalogoCabos,
+            ajustar_malha_viaria: snapEnabled,
+          }),
+        },
       );
       setDistanceMeters(result.metragem_total);
       setEstimatedCost(result.custo_estimado);
+      setSavingsPercent(result.economia_percentual ?? 0);
       setTrechos(result.trechos_mst || []);
       setPoles((current) => current.filter((pole) => !ids.includes(pole.id)));
       setSelectedIds([]);
+      setSelectedTrecho(null);
     } catch (error) {
       setRequestError(error.message);
     }
-  }, [projectId, session.id_usuario]);
-
-  const calculateTopology = useCallback(async () => {
-    setIsCalculating(true);
-    setRequestError("");
-    try {
-      const result = await apiRequest(
-        `/projetos/${projectId}/mst?id_usuario_autor=${session.id_usuario}`,
-        { method: "POST", body: "null" },
-      );
-      setDistanceMeters(result.metragem_total);
-      setEstimatedCost(result.custo_estimado);
-      setTrechos(result.trechos_mst || []);
-      setProject((current) => current ? {
-        ...current,
-        metragem_total: result.metragem_total,
-        custo_estimado: result.custo_estimado,
-      } : current);
-    } catch (error) {
-      setRequestError(error.message);
-    } finally {
-      setIsCalculating(false);
-    }
-  }, [projectId, session.id_usuario]);
+  }, [projectId, session.id_usuario, buildCatalogoCabosPayload, snapEnabled]);
 
   const searchAddress = useCallback(
     async (query) => {
@@ -1361,9 +1550,10 @@ export const WorkspaceGis = () => {
       if (matchedTool) {
         selectTool(matchedTool.id);
       } else if (key === "s") {
-        setSnapEnabled((value) => !value);
+        handleToggleSnap();
       } else if (key === "escape") {
         setSelectedIds([]);
+        setSelectedTrecho(null);
         setTool("select");
       } else if ((key === "delete" || key === "backspace") && selectedIds.length) {
         event.preventDefault();
@@ -1373,7 +1563,7 @@ export const WorkspaceGis = () => {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedIds, selectTool, removeSelectedPoles]);
+  }, [selectedIds, selectTool, removeSelectedPoles, handleToggleSnap]);
 
   return (
     <main
@@ -1386,6 +1576,7 @@ export const WorkspaceGis = () => {
         poles={poles}
         trechos={trechos}
         selectedIds={selectedIds}
+        selectedTrecho={selectedTrecho}
         searchResult={searchResult}
         onMapReady={setMap}
         onViewChange={setView}
@@ -1393,6 +1584,7 @@ export const WorkspaceGis = () => {
         onAddPole={addPole}
         onMovePole={movePole}
         onSelectPole={selectPole}
+        onSelectTrecho={setSelectedTrecho}
         onClearSelection={clearSelection}
       />
       {/* Camada de interface: só os controles capturam o mouse; o resto deixa o clique passar para o mapa. */}
@@ -1405,15 +1597,48 @@ export const WorkspaceGis = () => {
           selectedTool={tool}
           onSelectTool={selectTool}
           snapEnabled={snapEnabled}
-          onToggleSnap={() => setSnapEnabled((value) => !value)}
+          onToggleSnap={handleToggleSnap}
         />
         {status === "ready" && (
-          <ToolHint tool={tool} selectedCount={selectedIds.length} />
+          <ToolHint tool={tool} selectedCount={selectedIds.length} snapEnabled={snapEnabled} />
+        )}
+        {selectedTrecho && (
+          <aside
+            className="pointer-events-auto absolute top-28 right-6 z-20 flex w-72 flex-col gap-1.5 rounded-xl border border-slate-700 bg-slate-900/95 p-4 text-xs text-slate-200 shadow-2xl"
+            aria-label="Detalhes do trecho óptico"
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-cyan-400">
+                Trecho #{selectedTrecho.id_trecho} · {selectedTrecho.modelo_cabo}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedTrecho(null)}
+                className="text-slate-400 hover:text-white"
+                aria-label="Fechar detalhes do trecho"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-300">
+              {selectedTrecho.origem_descricao} ↔ {selectedTrecho.destino_descricao}
+            </p>
+            <div className="mt-1 flex items-center justify-between border-t border-slate-800 pt-2">
+              <span>Distância: <strong>{Number(selectedTrecho.distancia_metros).toFixed(2)} m</strong></span>
+              <span>Custo: <strong className="text-emerald-400">{Number(selectedTrecho.custo_trecho).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong></span>
+            </div>
+            <span className="text-[10px] text-slate-400">
+              Grafo Não Direcionado · {(selectedTrecho.caminho_coordenadas?.length || 0) > 2
+                ? `Polilinha Viária (${selectedTrecho.caminho_coordenadas.length} vértices)`
+                : "Segmento Geodésico Direto (2 vértices)"}
+            </span>
+          </aside>
         )}
         <MapStats
-          poleCount={poles.length}
+          poles={poles}
           distanceMeters={distanceMeters}
           estimatedCost={estimatedCost}
+          savingsPercent={savingsPercent}
         />
         <MapControls
           zoomLevel={view.zoom}
@@ -1427,6 +1652,7 @@ export const WorkspaceGis = () => {
       </div>
       <Sidebar
         poleCount={poles.length}
+        trechoCount={trechos.length}
         searchEnabled={status === "ready"}
         onSearch={searchAddress}
         onClearSearch={clearSearch}
@@ -1434,6 +1660,13 @@ export const WorkspaceGis = () => {
         canCalculate={Boolean(project)}
         onCalculate={calculateTopology}
         isCalculating={isCalculating}
+        cableType={cableType}
+        onCableTypeChange={handleCableTypeChange}
+        cablePrice={cablePrice}
+        onCablePriceChange={setCablePrice}
+        maxSpan={maxSpan}
+        onMaxSpanChange={setMaxSpan}
+        snapEnabled={snapEnabled}
       />
       {requestError && (
         <p className="workspace__status" role="alert">{requestError}</p>

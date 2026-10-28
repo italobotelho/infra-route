@@ -7,16 +7,34 @@ export async function apiRequest(path, options = {}) {
     ? { Authorization: `Bearer ${session.access_token}` }
     : {};
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...authHeader,
-      ...options.headers,
-    },
-  });
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers: {
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...authHeader,
+        ...options.headers,
+      },
+    });
+  } catch {
+    throw new Error(
+      "Não foi possível conectar ao servidor da API (porta 8000). Verifique se o backend está em execução.",
+    );
+  }
 
-  const data = response.status === 204 ? null : await response.json();
+  let data = null;
+  if (response.status !== 204) {
+    const rawText = await response.text();
+    if (rawText) {
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        data = null;
+      }
+    }
+  }
+
   if (!response.ok) {
     if (response.status === 401) {
       clearSession();
@@ -25,9 +43,15 @@ export async function apiRequest(path, options = {}) {
     const message = Array.isArray(detail)
       ? detail.map((item) => item.msg).filter(Boolean).join(" ")
       : detail;
-    throw new Error(
-      message || `Falha na API (${response.status}).`,
-    );
+    if (message) {
+      throw new Error(message);
+    }
+    if (response.status >= 500) {
+      throw new Error(
+        "Servidor da API indisponível (porta 8000). Verifique se o backend FastAPI está rodando.",
+      );
+    }
+    throw new Error(`Falha na API (${response.status}).`);
   }
   return data;
 }

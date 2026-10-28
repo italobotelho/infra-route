@@ -169,9 +169,19 @@ export const CanvasBackground = () => {
                 Criar conta
               </Link>
             </p>
-            <p className="text-xs text-slate-500">
-              Demonstração: engenheiro@empresa.com.br / 123456
-            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setFormValues({
+                  email: "engenheiro@empresa.com.br",
+                  senha: "123456",
+                });
+                setMessage("");
+              }}
+              className="text-xs text-slate-500 hover:text-blue-700 hover:underline cursor-pointer"
+            >
+              Demonstração (clique para preencher): engenheiro@empresa.com.br / 123456
+            </button>
           </form>
         </div>
       </section>

@@ -198,6 +198,8 @@ def recalcular_mst_do_projeto_armazenado(
             ]
             for id_no, adjs in resultado.lista_adjacencia.items()
         },
+        metragem_malha_candidata=resultado.metragem_malha_candidata,
+        economia_percentual=resultado.economia_percentual,
     )
 
 
