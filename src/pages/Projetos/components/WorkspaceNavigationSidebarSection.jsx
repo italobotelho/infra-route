@@ -55,6 +55,13 @@ const renderNavigationIcon = (item) => {
 export const WorkspaceNavigationSidebarSection = () => {
   const navigate = useNavigate();
   const session = getSession();
+  const userInitials = (session?.nome || "IR")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0].toUpperCase())
+    .join("") || "IR";
 
   const handleNavigation = (label) => {
     if (label === "Projetos") navigate("/projetos");
@@ -156,7 +163,7 @@ export const WorkspaceNavigationSidebarSection = () => {
               aria-hidden="true"
             >
               <div className="relative w-fit [font-family:'Inter-SemiBold',Helvetica] font-semibold text-slate-50 text-xs tracking-[0] leading-[normal]">
-                RM
+                {userInitials}
               </div>
             </div>
             <div className="flex flex-col items-start gap-1 relative flex-1 grow">

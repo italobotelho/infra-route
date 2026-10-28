@@ -297,6 +297,11 @@ class CriarProjetoRequestSchema(BaseModel):
     id_usuario_autor: int = Field(default=1, gt=0)
 
 
+class AtualizarStatusProjetoRequestSchema(BaseModel):
+    novo_status: EnumStatusProjeto = Field(..., description="Novo status do ciclo de vida do projeto")
+    id_usuario_autor: int = Field(default=1, gt=0)
+
+
 class ProjetoResumoSchema(BaseModel):
     id_projeto: int
     nome: str

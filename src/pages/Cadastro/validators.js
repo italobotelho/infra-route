@@ -93,7 +93,26 @@ export function avaliarSenha(senha) {
   if (/[^A-Za-z0-9]/.test(senha)) pontos++;
 
   let forca = "Fraca";
-  if (senha.length >= 8 && pontos >= 3) forca = "Média";
-  if (senha.length >= 10 && pontos >= 4) forca = "Forte";
+  if (senha.length >= 8 && pontos >= 4) forca = "Média";
+  if (senha.length >= 8 && pontos === 5) forca = "Forte";
   return forca;
+}
+
+export function validarSenha(senha) {
+  if (senha.length < 8) {
+    return "A senha deve ter pelo menos 8 caracteres.";
+  }
+  if (!/[A-Z]/.test(senha)) {
+    return "A senha deve incluir pelo menos 1 letra maiúscula.";
+  }
+  if (!/[a-z]/.test(senha)) {
+    return "A senha deve incluir pelo menos 1 letra minúscula.";
+  }
+  if (!/[0-9]/.test(senha)) {
+    return "A senha deve incluir pelo menos 1 número.";
+  }
+  if (!/[^A-Za-z0-9]/.test(senha)) {
+    return "A senha deve incluir pelo menos 1 caractere especial (ex: @, #, !, $).";
+  }
+  return "";
 }
