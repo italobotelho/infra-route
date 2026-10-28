@@ -1,0 +1,532 @@
+/*
+ * Estilos do workspace GIS.
+ * As regras usam utilidades do Tailwind via @apply (mesmos valores de antes),
+ * mas ficam aqui, fora do JSX. Os marcadores do mapa usam CSS puro.
+ */
+
+:root {
+  --font-regular: "Inter-Regular", Helvetica;
+  --font-medium: "Inter-Medium", Helvetica;
+  --font-semibold: "Inter-SemiBold", Helvetica;
+}
+
+/* Atalhos reutilizáveis */
+
+.icon-slot {
+  @apply relative h-5 w-5;
+}
+
+.icon-fill {
+  @apply absolute inset-0 h-full w-full;
+}
+
+.fill-parent {
+  @apply h-full w-full;
+}
+
+.icon-13 {
+  @apply h-[13px] w-[13px];
+}
+
+.icon-16 {
+  @apply h-4 w-4;
+}
+
+.divider-vertical {
+  @apply h-9 w-px bg-slate-700;
+}
+
+.divider-horizontal {
+  @apply h-px w-full bg-slate-700;
+}
+
+/* Mapa */
+
+.map-canvas {
+  @apply absolute inset-y-0 left-80 right-0 overflow-hidden bg-[#111a23];
+}
+
+.map-error {
+  @apply absolute inset-0 flex items-center justify-center bg-slate-950/90 p-8;
+}
+
+.map-error__card {
+  @apply max-w-sm rounded-xl border border-solid border-slate-700 bg-slate-900 p-5;
+}
+
+.map-error__title {
+  font-family: var(--font-semibold);
+  @apply text-sm font-semibold text-slate-50;
+}
+
+.map-error__text {
+  font-family: var(--font-regular);
+  @apply mt-2 text-xs leading-5 text-slate-300;
+}
+
+/* Barra de ferramentas */
+
+.toolbar {
+  @apply pointer-events-auto absolute top-4 left-[calc(50.00%_-_123px)] inline-flex items-center gap-1 overflow-hidden rounded-[18px] border border-solid border-slate-700 bg-slate-900 p-2 shadow-[0px_8px_32px_#02061754] backdrop-blur-[10px];
+}
+
+.tool-hint {
+  font-family: var(--font-regular);
+  @apply absolute top-[100px] left-[calc(50.00%_-_123px)] rounded-full border border-solid border-slate-700 bg-slate-900 px-3 py-1.5 text-[10px] leading-4 text-slate-300;
+}
+
+/* Painel de números */
+
+.map-stats {
+  @apply absolute bottom-10 left-[344px] inline-flex items-center gap-6 overflow-hidden rounded-xl border border-solid border-slate-700 bg-slate-900 px-5 py-4 shadow-[0px_8px_32px_#02061754];
+}
+
+.map-stats__group {
+  @apply inline-flex flex-col items-start gap-1.5;
+}
+
+.map-stats__label {
+  font-family: var(--font-regular);
+  @apply text-[10px] font-normal leading-[15px] text-slate-300;
+}
+
+.map-stats__value-row {
+  @apply inline-flex items-baseline gap-[5px];
+}
+
+.map-stats__value {
+  font-family: var(--font-semibold);
+  @apply text-2xl font-semibold tracking-[-0.17px] text-slate-50;
+}
+
+.map-stats__unit {
+  font-family: var(--font-regular);
+  @apply text-[13px] font-normal leading-[19.5px] text-slate-300;
+}
+
+.map-stats__group.map-stats__group--counts {
+  @apply inline-flex flex-col items-start gap-[9px];
+}
+
+.map-stats__counts {
+  font-family: var(--font-medium);
+  @apply text-[11px] font-medium leading-[16.5px] text-slate-300;
+}
+
+.map-stats__savings {
+  @apply inline-flex items-center gap-1.5;
+}
+
+.map-stats__savings-text {
+  font-family: var(--font-regular);
+  @apply text-[10px] font-normal leading-[15px] text-[#86efac];
+}
+
+/* Controles de zoom e bússola */
+
+.map-controls {
+  @apply pointer-events-auto absolute bottom-[54px] right-6 inline-flex flex-col items-start gap-3;
+}
+
+.map-controls__compass {
+  @apply flex h-12 w-10 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-lg border border-solid border-slate-700 bg-slate-900;
+}
+
+.map-controls__compass-label {
+  font-family: var(--font-semibold);
+  @apply text-[9px] font-semibold text-slate-300;
+}
+
+.map-controls__compass-icon {
+  @apply relative h-[18px] w-[18px];
+}
+
+.map-controls__zoom {
+  @apply relative h-10 w-10;
+}
+
+.map-controls__zoom.map-controls__zoom--out {
+  @apply relative -mt-3 h-10 w-10;
+}
+
+.map-controls__sign.map-controls__sign--plus {
+  @apply absolute inset-x-0 top-1 text-lg leading-none text-slate-300;
+}
+
+.map-controls__sign.map-controls__sign--minus {
+  @apply absolute inset-x-0 bottom-1 text-lg leading-none text-slate-300;
+}
+
+.zoom-level-label {
+  @apply sr-only;
+}
+
+/* Escala */
+
+.scale-bar {
+  @apply absolute bottom-[26px] right-6 inline-flex items-center gap-2;
+}
+
+.scale-bar__line {
+  @apply relative h-[5px] border-b border-l border-r border-solid border-[#bac6d2];
+}
+
+.scale-bar__label {
+  font-family: var(--font-regular);
+  @apply text-[9px] leading-[13.5px] text-slate-300;
+}
+
+/* Cabeçalho do workspace */
+
+.workspace-header {
+  @apply absolute top-28 left-[344px] inline-flex flex-col items-start gap-[3px];
+}
+
+.workspace-header__region {
+  font-family: var(--font-medium);
+  @apply text-[11px] font-medium text-slate-300;
+}
+
+.workspace-header__title {
+  font-family: var(--font-medium);
+  @apply text-xl font-medium tracking-[-0.10px] text-slate-50;
+}
+
+.workspace-header__summary {
+  font-family: var(--font-regular);
+  @apply text-[11px] font-normal leading-[16.5px] text-slate-300;
+}
+
+/* Camadas */
+
+.layer-switch {
+  @apply flex h-12 w-full items-center gap-2.5;
+}
+
+.layer-switch__icon {
+  @apply relative h-[17px] w-[17px];
+}
+
+/* Barra lateral */
+
+.sidebar {
+  @apply absolute top-0 left-0 h-full w-80;
+}
+
+.sidebar__panel {
+  @apply flex h-full w-80 flex-col items-start border-r border-solid border-slate-700 bg-slate-950;
+}
+
+.sidebar__header {
+  @apply flex w-full flex-col items-start gap-6 p-6;
+}
+
+.brand {
+  @apply inline-flex items-center gap-2.5;
+}
+
+.brand__mark {
+  @apply flex h-[30px] w-[30px] items-center justify-center overflow-hidden rounded-lg bg-indigo-600;
+}
+
+.brand__mark-icon {
+  @apply h-[19px] w-[19px];
+}
+
+.brand__name {
+  font-family: var(--font-regular);
+  @apply text-[23px] font-normal tracking-[-0.16px] text-slate-50;
+}
+
+.brand__tag {
+  font-family: var(--font-medium);
+  @apply text-[9px] font-medium text-slate-300;
+}
+
+.project {
+  @apply flex w-full flex-col items-start gap-2;
+}
+
+.project__eyebrow {
+  font-family: var(--font-medium);
+  @apply text-[9px] font-medium tracking-[0.11px] text-slate-300;
+}
+
+.project__name {
+  font-family: var(--font-semibold);
+  @apply text-sm font-semibold leading-[22px] text-slate-50;
+}
+
+.project__badge {
+  font-family: var(--font-medium);
+  @apply rounded-[128px] bg-slate-900 px-2.5 py-1.5 text-[11px] font-medium leading-3 text-slate-300;
+}
+
+.sidebar__content {
+  @apply flex w-full flex-1 flex-col items-start;
+}
+
+/* Busca */
+
+.search {
+  @apply w-full p-6;
+}
+
+.search__field {
+  @apply flex h-11 w-full items-center gap-3 rounded-lg border border-solid border-slate-700 bg-slate-900 px-4;
+}
+
+.search__icon {
+  @apply h-[19.45px] w-[19.45px];
+}
+
+.search__input {
+  font-family: var(--font-regular);
+  @apply min-w-0 flex-1 text-xs leading-5 text-slate-300 placeholder:text-slate-300;
+}
+
+/* Seções do painel */
+
+.panel-section {
+  @apply flex w-full flex-col items-start gap-3 p-6;
+}
+
+.panel-section.panel-section--spaced {
+  @apply flex w-full flex-col items-start gap-5 p-6;
+}
+
+.panel-section__heading {
+  @apply flex w-full items-center gap-2;
+}
+
+.panel-section__title {
+  font-family: var(--font-semibold);
+  @apply text-[13px] font-semibold text-slate-50;
+}
+
+.layer-list {
+  @apply flex w-full flex-col items-start;
+}
+
+.panel-note {
+  @apply flex w-full items-start gap-[7px];
+}
+
+.panel-note__text {
+  font-family: var(--font-regular);
+  @apply flex-1 text-[10px] leading-4 text-slate-300;
+}
+
+/* Campos de parâmetros */
+
+.field {
+  @apply flex w-full flex-col items-start gap-2;
+}
+
+.field-row {
+  @apply flex w-full items-start gap-3;
+}
+
+.field.field--grow {
+  @apply flex flex-1 flex-col items-start gap-2;
+}
+
+.field__label {
+  font-family: var(--font-regular);
+  @apply text-[11px] leading-[16.5px] text-slate-300;
+}
+
+.field__wrap {
+  @apply relative w-full;
+}
+
+.field__control.field__control--unit-md {
+  font-family: var(--font-regular);
+  @apply h-[42px] w-full rounded-lg border border-solid border-slate-700 bg-slate-900 px-3 pr-10 text-xs text-slate-50;
+}
+
+.field__control.field__control--unit-sm {
+  font-family: var(--font-regular);
+  @apply h-[42px] w-full rounded-lg border border-solid border-slate-700 bg-slate-900 px-3 pr-7 text-xs text-slate-50;
+}
+
+.field__control {
+  font-family: var(--font-regular);
+  @apply h-[42px] w-full rounded-lg border border-solid border-slate-700 bg-slate-900 px-3 text-xs text-slate-50;
+}
+
+.field__chevron {
+  @apply pointer-events-none absolute right-3 top-3 h-3.5 w-3.5;
+}
+
+.field__unit {
+  @apply pointer-events-none absolute right-3 top-3 text-xs text-slate-50;
+}
+
+.field__unit.field__unit--muted {
+  @apply pointer-events-none absolute right-3 top-3 text-xs text-slate-300;
+}
+
+/* Rodapé da barra lateral */
+
+.sidebar__footer {
+  @apply flex w-full flex-col items-start gap-3 border-t border-solid border-slate-700 p-6;
+}
+
+.sidebar__status {
+  @apply flex w-full items-center gap-[7px];
+}
+
+.sidebar__status-dot {
+  @apply h-[5px] w-[5px] rounded-[2.5px] bg-slate-300;
+}
+
+.sidebar__status-text {
+  font-family: var(--font-regular);
+  @apply text-[10px] leading-[15px] text-slate-300;
+}
+
+.primary-button {
+  font-family: var(--font-semibold);
+  @apply h-12 w-full rounded-lg bg-indigo-600 px-6 py-3 text-xs font-semibold leading-6 text-white;
+}
+
+/* Página */
+
+.workspace {
+  @apply relative min-h-[900px] w-full min-w-[1440px] overflow-hidden bg-slate-950;
+}
+
+.workspace__overlay {
+  @apply pointer-events-none absolute top-0 left-0 h-full w-full;
+}
+
+.workspace__status {
+  font-family: var(--font-regular);
+  @apply absolute bottom-2 left-[400px] text-[9px] font-normal text-slate-300;
+}
+
+/* Botões da barra de ferramentas (estados) */
+
+.tool-button {
+  @apply relative flex h-14 w-16 flex-col items-center justify-center gap-1 overflow-hidden rounded-xl;
+}
+
+.tool-button--active {
+  @apply bg-indigo-600;
+}
+
+.tool-button--snap-on {
+  @apply bg-[#123530];
+}
+
+.tool-button__label {
+  font-family: var(--font-regular);
+  @apply text-[9px] font-normal leading-[normal] text-slate-300;
+}
+
+.tool-button--active .tool-button__label {
+  font-family: var(--font-semibold);
+  @apply font-semibold text-white;
+}
+
+.tool-button__label--snap {
+  font-family: var(--font-semibold);
+  @apply font-semibold text-slate-300;
+}
+
+.tool-button--snap-on .tool-button__label--snap {
+  @apply text-cyan-300;
+}
+
+/* Camadas (estados) */
+
+.layer-switch__label {
+  font-family: var(--font-regular);
+  @apply flex-1 text-[11px] leading-[16.5px] text-slate-300;
+}
+
+.layer-switch__label--bright {
+  @apply text-slate-50;
+}
+
+.layer-switch__toggle {
+  @apply flex h-[18px] w-[30px] items-center justify-start rounded-[999px] bg-slate-700 p-[3px];
+}
+
+.layer-switch__toggle--on {
+  @apply justify-end bg-indigo-600;
+}
+
+.layer-switch__knob {
+  @apply h-3 w-3 rounded-md bg-slate-300;
+}
+
+.layer-switch__toggle--on .layer-switch__knob {
+  @apply bg-white;
+}
+
+/* Mensagem da busca (estados) */
+
+.search__message {
+  font-family: var(--font-regular);
+  @apply mt-2 text-[10px] leading-4 text-slate-300;
+}
+
+.search__message--error {
+  @apply text-red-400;
+}
+
+/* Marcadores do mapa (criados via DOM dentro do overlay do Google Maps) */
+
+.pole-marker {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #f8fafc;
+  border-radius: 9999px;
+  background: #4f46e5;
+  box-shadow: 0 2px 8px rgba(2, 6, 23, 0.7);
+  /* left/top do overlay marcam o centro do círculo */
+  transform: translate(-50%, -50%);
+  touch-action: none;
+  cursor: default;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    background 120ms ease;
+}
+
+.pole-marker[data-tool="select"] {
+  cursor: pointer;
+}
+
+.pole-marker[data-tool="pole"] {
+  cursor: crosshair;
+}
+
+.pole-marker--selected {
+  z-index: 2;
+  background: #22d3ee;
+  box-shadow:
+    0 0 0 4px rgba(34, 211, 238, 0.35),
+    0 2px 8px rgba(2, 6, 23, 0.7);
+  transform: translate(-50%, -50%) scale(1.3);
+}
+
+.search-marker {
+  position: absolute;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #f8fafc;
+  border-radius: 9999px;
+  background: #f59e0b;
+  box-shadow:
+    0 0 0 6px rgba(245, 158, 11, 0.3),
+    0 2px 8px rgba(2, 6, 23, 0.7);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}

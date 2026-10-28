@@ -1,0 +1,43 @@
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/$/, "");
+const SESSION_KEY = "infraroute-session";
+
+export async function apiRequest(path, options = {}) {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...options.headers,
+    },
+  });
+
+  const data = response.status === 204 ? null : await response.json();
+  if (!response.ok) {
+    const detail = data?.detalhe || data?.detail;
+    const message = Array.isArray(detail)
+      ? detail.map((item) => item.msg).filter(Boolean).join(" ")
+      : detail;
+    throw new Error(
+      message || `Falha na API (${response.status}).`,
+    );
+  }
+  return data;
+}
+
+export function getSession() {
+  const session = localStorage.getItem(SESSION_KEY);
+  if (!session) return null;
+  try {
+    return JSON.parse(session);
+  } catch {
+    clearSession();
+    return null;
+  }
+}
+
+export function saveSession(session) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+}
+
+export function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
+}
