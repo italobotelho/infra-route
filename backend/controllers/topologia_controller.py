@@ -4,15 +4,17 @@ Controlador HTTP (FastAPI Router) para processamento topológico e extração da
 """
 
 from dataclasses import asdict
-from fastapi import APIRouter, Query, status
+from typing import Optional
+from fastapi import APIRouter, Depends, Query, status
 
+from backend.controllers.auth_controller import obter_sessao_opcional
 from backend.models.schemas import (
     RequisicaoCalculoMSTSchema,
     ResultadoMSTProjetoSchema,
     VizinhoAdjacenciaSchema,
 )
 from backend.services.exceptions import ValidacaoDominioError
-from backend.services.workspace_store import workspace_store
+from backend.services.workspace_store import SessaoAutenticada, workspace_store
 from backend.services.prim_service import (
     ArestaCandidata,
     CoordenadaLatLng,
@@ -38,16 +40,19 @@ def calcular_mst_projeto(
     id_projeto: int,
     payload: RequisicaoCalculoMSTSchema | None = None,
     id_usuario_autor: int = Query(default=1, gt=0),
+    sessao: Optional[SessaoAutenticada] = Depends(obter_sessao_opcional),
 ) -> ResultadoMSTProjetoSchema:
     if id_projeto <= 0:
         raise ValidacaoDominioError(
             "O identificador do projeto (id_projeto) deve ser um inteiro positivo."
         )
 
+    autor_id = sessao.id_usuario if sessao is not None else id_usuario_autor
+
     if payload is None:
         resultado = workspace_store.recalcular_mst_projeto(
             id_projeto=id_projeto,
-            id_usuario_autor=id_usuario_autor,
+            id_usuario_autor=autor_id,
         )
         return ResultadoMSTProjetoSchema(
             id_projeto=resultado.id_projeto,

@@ -10,6 +10,15 @@ class InfraRouteError(Exception):
     codigo_http: int = 400
 
 
+class NaoAutenticadoError(InfraRouteError, PermissionError):
+    """
+    Credenciais ausentes, token JWT inválido, adulterado ou expirado.
+    Mapeado para HTTP 401 Unauthorized.
+    """
+
+    codigo_http: int = 401
+
+
 class ValidacaoDominioError(InfraRouteError, ValueError):
     """Erro de validação de atributos, limites físicos ou parâmetros inválidos."""
 
@@ -60,4 +69,3 @@ class RecursoNaoEncontradoError(InfraRouteError, LookupError):
     """Entidade solicitada não existe no escopo informado."""
 
     codigo_http: int = 404
-

@@ -6,8 +6,9 @@
 INSERT INTO Empresa (CNPJ, Razao_Social) VALUES
 ('12.345.678/0001-90', 'InfraTelecom Engenharia Óptica S.A.');
 
+-- Senha padrão ('123456') criptografada com bcrypt ($2b$12$...)
 INSERT INTO Usuario (Nome, CPF, Telefone, Email, Senha) VALUES
-('Engenheiro Responsável', '123.456.789-00', '(19) 99999-0000', 'engenheiro@empresa.com.br', 'hash_bcrypt_exemplo');
+('Engenheiro Responsável', '123.456.789-00', '(19) 99999-0000', 'engenheiro@empresa.com.br', '$2b$12$.pPzTtLhpmO8sCHgHeSRreawoJC/cr9iyCHI1MTrZeA1R.C1zdKPS');
 
 INSERT INTO Engenheiro (ID_Usuario, CREA) VALUES
 (1, 'SP-5060708090');
@@ -55,4 +56,3 @@ INSERT INTO Trecho_Rede (Geometria_Linha, Distancia_Metros, Origem_ID, Destino_I
   1,
   1
 );
-

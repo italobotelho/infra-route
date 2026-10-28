@@ -6,13 +6,20 @@ Conecta `GovernancaMultiTenantService` e `GrafoTopologicoOptico` para prover
 todas as operações consumidas pelas telas `login.html` e `index.html`.
 """
 
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from typing import Dict, List, Optional, Sequence
 
 from backend.services.exceptions import (
+    NaoAutenticadoError,
     RecursoNaoEncontradoError,
     ValidacaoDominioError,
     ViolacaoMultiTenantError,
+)
+from backend.services.security_service import (
+    decodificar_token_acesso,
+    gerar_hash_senha,
+    gerar_token_acesso,
+    verificar_senha,
 )
 from backend.services.governanca_service import (
     Empresa,
@@ -38,6 +45,9 @@ from backend.services.prim_service import (
 )
 
 
+_HASH_SENHA_SEED_PADRAO: str = gerar_hash_senha("123456")
+
+
 @dataclass(frozen=True)
 class SessaoAutenticada:
     id_usuario: int
@@ -48,6 +58,8 @@ class SessaoAutenticada:
     id_empresa_padrao: int
     razao_social_empresa: str
     nivel_acesso: str
+    access_token: str = field(default="", compare=False)
+    token_type: str = field(default="bearer", compare=False)
 
 
 class WorkspaceStoreService:
@@ -93,9 +105,10 @@ class WorkspaceStoreService:
             ),
         }
 
+        # Armazena exclusivamente hashes bcrypt ($2b$12$...) das senhas dos colaboradores
         self._senhas_usuarios: Dict[int, str] = {
-            1: "123456",
-            2: "123456",
+            1: _HASH_SENHA_SEED_PADRAO,
+            2: _HASH_SENHA_SEED_PADRAO,
         }
 
         self.vinculos: List[VinculoCorporate] = [
@@ -239,14 +252,19 @@ class WorkspaceStoreService:
                 break
 
         if usuario_encontrado is None:
+            # Executa verificação dummy em tempo constante para mitigar enumeração por timing
+            verificar_senha(senha, _HASH_SENHA_SEED_PADRAO)
             raise ViolacaoMultiTenantError("Credenciais corporativas inválidas.")
 
-        senha_cadastrada = self._senhas_usuarios.get(usuario_encontrado.id_usuario)
-        if senha_cadastrada is not None and senha != senha_cadastrada:
+        senha_hash_cadastrada = self._senhas_usuarios.get(usuario_encontrado.id_usuario)
+        if not senha_hash_cadastrada or not verificar_senha(senha, senha_hash_cadastrada):
             raise ViolacaoMultiTenantError("Credenciais corporativas inválidas.")
 
+        return self._construir_sessao_usuario(usuario_encontrado)
+
+    def _construir_sessao_usuario(self, usuario: Usuario) -> SessaoAutenticada:
         vinculos_usuario = [
-            v for v in self.vinculos if v.id_usuario == usuario_encontrado.id_usuario
+            v for v in self.vinculos if v.id_usuario == usuario.id_usuario
         ]
         if not vinculos_usuario:
             raise ViolacaoMultiTenantError(
@@ -255,17 +273,33 @@ class WorkspaceStoreService:
 
         vinculo_principal = vinculos_usuario[0]
         empresa = self.empresas[vinculo_principal.id_empresa]
+        token = gerar_token_acesso(
+            id_usuario=usuario.id_usuario,
+            email=usuario.email,
+            id_empresa=empresa.id_empresa,
+            nivel_acesso=vinculo_principal.nivel_acesso.value,
+            eh_engenheiro=usuario.eh_engenheiro,
+        )
 
         return SessaoAutenticada(
-            id_usuario=usuario_encontrado.id_usuario,
-            nome=usuario_encontrado.nome,
-            email=usuario_encontrado.email,
-            crea=usuario_encontrado.crea,
-            eh_engenheiro=usuario_encontrado.eh_engenheiro,
+            id_usuario=usuario.id_usuario,
+            nome=usuario.nome,
+            email=usuario.email,
+            crea=usuario.crea,
+            eh_engenheiro=usuario.eh_engenheiro,
             id_empresa_padrao=empresa.id_empresa,
             razao_social_empresa=empresa.razao_social,
             nivel_acesso=vinculo_principal.nivel_acesso.value,
+            access_token=token,
+            token_type="bearer",
         )
+
+    def validar_token_sessao(self, token: str) -> SessaoAutenticada:
+        payload = decodificar_token_acesso(token)
+        usuario = self.usuarios.get(payload.id_usuario)
+        if usuario is None:
+            raise NaoAutenticadoError("Usuário associado ao token não existe mais.")
+        return self._construir_sessao_usuario(usuario)
 
     def registrar_usuario(
         self,
@@ -306,7 +340,7 @@ class WorkspaceStoreService:
         )
 
         self.usuarios[novo_id] = usuario
-        self._senhas_usuarios[novo_id] = senha
+        self._senhas_usuarios[novo_id] = gerar_hash_senha(senha)
         self.vinculos.append(vinculo)
         self.governanca.usuarios[novo_id] = usuario
         self.governanca.vinculos[(novo_id, 1)] = vinculo

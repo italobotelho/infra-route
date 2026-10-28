@@ -73,6 +73,11 @@ class LoginResponseSchema(BaseModel):
     id_empresa_padrao: int
     razao_social_empresa: str
     nivel_acesso: EnumNivelAcesso
+    access_token: str = Field(
+        default="",
+        description="Token JWT (HS256) assinado para autenticação Bearer nas rotas protegidas",
+    )
+    token_type: str = Field(default="bearer", description="Esquema HTTP Authorization (Bearer)")
 
 
 class TipoEquipamentoSchema(BaseModel):

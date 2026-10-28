@@ -5,8 +5,9 @@ Cadastro de Pontos de Rede (`Ponto_Rede`) e Exclusão Lógica (`Soft Delete`).
 
 from dataclasses import asdict
 from typing import List, Optional
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
+from backend.controllers.auth_controller import obter_sessao_opcional
 from backend.models.schemas import (
     AtualizarCoordenadasPontoRequestSchema,
     CatalogosResponseSchema,
@@ -20,7 +21,7 @@ from backend.models.schemas import (
     VizinhoAdjacenciaSchema,
 )
 from backend.services.prim_service import StatusPontoProjeto
-from backend.services.workspace_store import workspace_store
+from backend.services.workspace_store import SessaoAutenticada, workspace_store
 
 router = APIRouter(
     prefix="/api",
@@ -54,10 +55,12 @@ def listar_catalogos() -> CatalogosResponseSchema:
 def listar_projetos(
     id_empresa: int = Query(default=1, gt=0),
     id_usuario_autor: int = Query(default=1, gt=0),
+    sessao: Optional[SessaoAutenticada] = Depends(obter_sessao_opcional),
 ) -> List[ProjetoResumoSchema]:
+    autor_id = sessao.id_usuario if sessao is not None else id_usuario_autor
     projetos = workspace_store.listar_projetos(
         id_empresa=id_empresa,
-        id_usuario_autor=id_usuario_autor,
+        id_usuario_autor=autor_id,
     )
     return [ProjetoResumoSchema(**asdict(p)) for p in projetos]
 
@@ -68,12 +71,16 @@ def listar_projetos(
     status_code=status.HTTP_201_CREATED,
     summary="Cria um novo projeto validando Triângulo Multi-Tenant, CREA e RBAC",
 )
-def criar_projeto(payload: CriarProjetoRequestSchema) -> ProjetoResumoSchema:
+def criar_projeto(
+    payload: CriarProjetoRequestSchema,
+    sessao: Optional[SessaoAutenticada] = Depends(obter_sessao_opcional),
+) -> ProjetoResumoSchema:
+    autor_id = sessao.id_usuario if sessao is not None else payload.id_usuario_autor
     projeto = workspace_store.criar_projeto(
         nome=payload.nome,
         id_empresa=payload.id_empresa,
         id_engenheiro=payload.id_engenheiro,
-        id_usuario_autor=payload.id_usuario_autor,
+        id_usuario_autor=autor_id,
     )
     return ProjetoResumoSchema(**asdict(projeto))
 
@@ -87,10 +94,12 @@ def criar_projeto(payload: CriarProjetoRequestSchema) -> ProjetoResumoSchema:
 def obter_projeto_detalhado(
     id_projeto: int,
     id_usuario_autor: int = Query(default=1, gt=0),
+    sessao: Optional[SessaoAutenticada] = Depends(obter_sessao_opcional),
 ) -> ProjetoDetalhadoSchema:
+    autor_id = sessao.id_usuario if sessao is not None else id_usuario_autor
     projeto = workspace_store.obter_projeto(
         id_projeto=id_projeto,
-        id_usuario_autor=id_usuario_autor,
+        id_usuario_autor=autor_id,
     )
     pontos = workspace_store.pontos_por_projeto.get(id_projeto, [])
     trechos = workspace_store.trechos_por_projeto.get(id_projeto, [])
@@ -111,7 +120,9 @@ def obter_projeto_detalhado(
 def adicionar_ponto_rede(
     id_projeto: int,
     payload: CriarPontoRedeRequestSchema,
+    sessao: Optional[SessaoAutenticada] = Depends(obter_sessao_opcional),
 ) -> PontoRedeSchema:
+    autor_id = sessao.id_usuario if sessao is not None else payload.id_usuario_autor
     novo_ponto = workspace_store.adicionar_ponto_rede(
         id_projeto=id_projeto,
         descricao=payload.descricao,
@@ -119,7 +130,7 @@ def adicionar_ponto_rede(
         longitude=payload.longitude,
         status_fisico=payload.status_fisico.value,
         id_tipo_equipamento=payload.id_tipo_equipamento,
-        id_usuario_autor=payload.id_usuario_autor,
+        id_usuario_autor=autor_id,
     )
     return PontoRedeSchema(**asdict(novo_ponto))
 
@@ -134,13 +145,15 @@ def atualizar_coordenadas_ponto(
     id_projeto: int,
     id_ponto: int,
     payload: AtualizarCoordenadasPontoRequestSchema,
+    sessao: Optional[SessaoAutenticada] = Depends(obter_sessao_opcional),
 ) -> PontoRedeSchema:
+    autor_id = sessao.id_usuario if sessao is not None else payload.id_usuario_autor
     ponto_atualizado = workspace_store.atualizar_coordenadas_ponto(
         id_projeto=id_projeto,
         id_ponto=id_ponto,
         latitude=payload.latitude,
         longitude=payload.longitude,
-        id_usuario_autor=payload.id_usuario_autor,
+        id_usuario_autor=autor_id,
     )
     return PontoRedeSchema(**asdict(ponto_atualizado))
 
@@ -155,10 +168,12 @@ def recalcular_mst_do_projeto_armazenado(
     id_projeto: int,
     id_usuario_autor: int = Query(default=1, gt=0),
     no_inicial_id: Optional[int] = Query(default=None, gt=0),
+    sessao: Optional[SessaoAutenticada] = Depends(obter_sessao_opcional),
 ) -> ResultadoMSTProjetoSchema:
+    autor_id = sessao.id_usuario if sessao is not None else id_usuario_autor
     resultado = workspace_store.recalcular_mst_projeto(
         id_projeto=id_projeto,
-        id_usuario_autor=id_usuario_autor,
+        id_usuario_autor=autor_id,
         no_inicial_id=no_inicial_id,
     )
     return ResultadoMSTProjetoSchema(
@@ -196,11 +211,13 @@ def inativar_ponto_no_projeto(
     id_projeto: int,
     id_ponto: int,
     payload: SoftDeletePontoRequestSchema,
+    sessao: Optional[SessaoAutenticada] = Depends(obter_sessao_opcional),
 ) -> PontoRedeSchema:
+    autor_id = sessao.id_usuario if sessao is not None else payload.id_usuario_autor
     ponto_atualizado = workspace_store.aplicar_soft_delete_ponto(
         id_projeto=id_projeto,
         id_ponto=id_ponto,
-        id_usuario_autor=payload.id_usuario_autor,
+        id_usuario_autor=autor_id,
         novo_status_ponto=StatusPontoProjeto(payload.novo_status_ponto.value),
         forcar_recalculo_mst=payload.forcar_recalculo_mst,
     )
