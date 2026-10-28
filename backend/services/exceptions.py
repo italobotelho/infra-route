@@ -12,11 +12,20 @@ class InfraRouteError(Exception):
 
 class NaoAutenticadoError(InfraRouteError, PermissionError):
     """
-    Credenciais ausentes, token JWT inválido, adulterado ou expirado.
+    Credenciais ausentes, token JWT inválido, revogado, adulterado ou expirado.
     Mapeado para HTTP 401 Unauthorized.
     """
 
     codigo_http: int = 401
+
+
+class LimiteRequisicoesExcedidoError(InfraRouteError, PermissionError):
+    """
+    Bloqueio temporário por excesso de tentativas falhas de autenticação (Rate Limiting / Anti-Brute-Force).
+    Mapeado para HTTP 429 Too Many Requests.
+    """
+
+    codigo_http: int = 429
 
 
 class ValidacaoDominioError(InfraRouteError, ValueError):

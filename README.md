@@ -111,9 +111,13 @@ Reinicie o Vite após alterar o arquivo `.env.local`.
 
 | Método | Rota | Descrição |
 | :--- | :--- | :--- |
-| `POST` | `/api/auth/login` | Autentica colaborador (`bcrypt`) e retorna perfil, CREA, `nivel_acesso` e `access_token` JWT. |
-| `POST` | `/api/auth/register` | Cadastra novo engenheiro com senha criptografada (`bcrypt`) e retorna sessão JWT. |
+| `POST` | `/api/auth/login` | Autentica colaborador (`bcrypt` + Rate Limiting anti-força bruta) e emite `access_token` JWT (`HS256`). |
+| `POST` | `/api/auth/register` | Cadastra novo engenheiro (`bcrypt`), gera código OTP de 6 dígitos e retorna sessão JWT. |
 | `GET` | `/api/auth/me` | Valida o token `Authorization: Bearer <token>` e retorna os dados da sessão ativa. |
+| `POST` | `/api/auth/logout` | Revoga imediatamente o token JWT atual no servidor (*Token Denylist* por `jti`). |
+| `POST` | `/api/auth/verificar-email` | Valida o código OTP de 6 dígitos e confirma o e-mail corporativo do engenheiro. |
+| `POST` | `/api/auth/reenviar-codigo` | Gera e envia um novo código OTP de 6 dígitos para verificação de e-mail. |
+| `GET` | `/api/auth/auditoria` | Lista a trilha de auditoria de segurança (logins, falhas, cadastros, logouts e verificações). |
 | `GET` | `/api/catalogos` | Lista os catálogos em 3FN (`Tipo_Equipamento` e `Tipo_Cabo`). |
 | `GET` | `/api/projetos` | Lista os projetos da empresa ativa com `metragem_total` e `custo_estimado` memoizados. |
 | `POST` | `/api/projetos` | Cria novo projeto validando Triângulo Multi-Tenant, CREA e RBAC. |

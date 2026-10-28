@@ -50,3 +50,20 @@ export function saveSession(session) {
 export function clearSession() {
   localStorage.removeItem(SESSION_KEY);
 }
+
+export async function logoutSession() {
+  const session = getSession();
+  if (session?.access_token) {
+    try {
+      await fetch(`${API_BASE_URL}/auth/logout`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+    } catch {
+      // prossegue com limpeza local caso a rede falhe
+    }
+  }
+  clearSession();
+}
