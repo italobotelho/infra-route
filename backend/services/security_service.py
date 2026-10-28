@@ -193,3 +193,4 @@ def decodificar_token_acesso(
         )
     except (KeyError, ValueError, TypeError) as exc:
         raise NaoAutenticadoError("Claims obrigatórias ausentes no token JWT.") from exc
+

@@ -10,7 +10,7 @@ Plataforma SaaS multi-tenant para planejamento geoespacial, cálculo de Árvore 
 infra-route/
 ├── backend/
 │   ├── controllers/
-│   │   ├── auth_controller.py         # POST /api/auth/login e POST /api/auth/register
+│   │   ├── auth_controller.py         # POST /api/auth/login, POST /api/auth/register e GET /api/auth/me
 │   │   ├── projetos_controller.py     # CRUD de Projetos, Pontos, Catálogos 3FN e Soft Delete
 │   │   └── topologia_controller.py    # POST /api/projetos/{id_projeto}/mst
 │   ├── models/
@@ -19,10 +19,12 @@ infra-route/
 │   │   ├── exceptions.py              # Exceções de domínio mapeadas para códigos HTTP
 │   │   ├── governanca_service.py      # Isolamento Multi-tenant, RBAC, CREA (p, d) e Soft Delete
 │   │   ├── prim_service.py            # Lista de Adjacência Bidirecional e Algoritmo de Prim
+│   │   ├── security_service.py        # Criptografia de senhas (bcrypt) e tokens JWT (HS256)
 │   │   └── workspace_store.py         # Orquestração de estado e persistência
 │   ├── tests/
 │   │   ├── test_governanca_backend.py # Testes de Multi-tenant, RBAC, CREA e Soft Delete
 │   │   ├── test_prim_service.py       # Testes de robustez do Algoritmo de Prim e Google Maps
+│   │   ├── test_security_auth.py      # Testes de criptografia bcrypt e autenticação JWT
 │   │   └── test_workspace_fluxo_completo.py # Testes integrados do fluxo de tela
 │   ├── database.py                    # Pool de conexões e transações SQLAlchemy / PostGIS
 │   ├── main.py                        # Servidor FastAPI, CORS e handler global de erros
@@ -109,8 +111,9 @@ Reinicie o Vite após alterar o arquivo `.env.local`.
 
 | Método | Rota | Descrição |
 | :--- | :--- | :--- |
-| `POST` | `/api/auth/login` | Autentica colaborador e retorna perfil, CREA e `nivel_acesso`. |
-| `POST` | `/api/auth/register` | Cadastra novo engenheiro e vincula à empresa de demonstração. |
+| `POST` | `/api/auth/login` | Autentica colaborador (`bcrypt`) e retorna perfil, CREA, `nivel_acesso` e `access_token` JWT. |
+| `POST` | `/api/auth/register` | Cadastra novo engenheiro com senha criptografada (`bcrypt`) e retorna sessão JWT. |
+| `GET` | `/api/auth/me` | Valida o token `Authorization: Bearer <token>` e retorna os dados da sessão ativa. |
 | `GET` | `/api/catalogos` | Lista os catálogos em 3FN (`Tipo_Equipamento` e `Tipo_Cabo`). |
 | `GET` | `/api/projetos` | Lista os projetos da empresa ativa com `metragem_total` e `custo_estimado` memoizados. |
 | `POST` | `/api/projetos` | Cria novo projeto validando Triângulo Multi-Tenant, CREA e RBAC. |
