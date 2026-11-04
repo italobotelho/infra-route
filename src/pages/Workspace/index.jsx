@@ -12,32 +12,154 @@ import {
   setStorageItem,
 } from "../../utils/storage";
 import "./workspace-gis.css";
-import xdefault from "./assets/default.svg";
-import default2 from "./assets/default-2.svg";
-import default3 from "./assets/default-3.svg";
-import default4 from "./assets/default-4.svg";
-import default5 from "./assets/default-5.svg";
-import default6 from "./assets/default-6.svg";
-import default7 from "./assets/default-7.svg";
-import default8 from "./assets/default-8.svg";
-import default9 from "./assets/default-9.svg";
-import default10 from "./assets/default-10.svg";
-import default11 from "./assets/default-11.svg";
-import default12 from "./assets/default-12.svg";
-import default13 from "./assets/default-13.svg";
-import default14 from "./assets/default-14.svg";
-import default15 from "./assets/default-15.svg";
-import default16 from "./assets/default-16.svg";
-import default17 from "./assets/default-17.svg";
-import default18 from "./assets/default-18.svg";
-import default23 from "./assets/default-23.svg";
-import image from "./assets/image.svg";
-import zoom from "./assets/zoom.svg";
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
 // Junta nomes de classe, ignorando valores falsos.
 const cx = (...names) => names.filter(Boolean).join(" ");
+
+/* ------------------------------------------------------------------ */
+/* Ícones vetoriais semânticos do Workspace GIS                        */
+/* ------------------------------------------------------------------ */
+
+function WorkspaceIcon({ name, className = "h-4 w-4" }) {
+  switch (name) {
+    case "brand":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <circle cx="6" cy="6" r="2.5" />
+          <circle cx="18" cy="6" r="2.5" />
+          <circle cx="12" cy="18" r="2.5" />
+          <path d="M8.2 7.2L10.8 16M15.8 7.2L13.2 16M8.5 6h7" />
+        </svg>
+      );
+    case "select":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <path d="M5 4l6.5 16 2.3-6.2L20 11.5 5 4z" />
+          <path d="M13.8 13.8L19 19" />
+        </svg>
+      );
+    case "lasso":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <rect x="4" y="4" width="16" height="16" rx="2" strokeDasharray="3 2.5" />
+          <path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4" />
+        </svg>
+      );
+    case "pole":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <path d="M12 3v18" />
+          <path d="M7 7h10" />
+          <path d="M8.5 11.5h7" />
+          <path d="M9 21h6" />
+          <circle cx="7" cy="7" r="1" fill="currentColor" />
+          <circle cx="17" cy="7" r="1" fill="currentColor" />
+        </svg>
+      );
+    case "cto":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <rect x="5" y="4" width="14" height="16" rx="2.5" />
+          <path d="M9 9h6M9 13h6" />
+          <circle cx="9.5" cy="16.5" r="1" fill="currentColor" />
+          <circle cx="14.5" cy="16.5" r="1" fill="currentColor" />
+        </svg>
+      );
+    case "ceo":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <rect x="3" y="7" width="18" height="10" rx="5" />
+          <path d="M12 7v10M7.5 12h9" />
+        </svg>
+      );
+    case "olt":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <rect x="3" y="5" width="18" height="6" rx="1.5" />
+          <rect x="3" y="13" width="18" height="6" rx="1.5" />
+          <circle cx="7" cy="8" r="1" fill="currentColor" />
+          <circle cx="7" cy="16" r="1" fill="currentColor" />
+          <path d="M11 8h6M11 16h6" />
+        </svg>
+      );
+    case "cable":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <circle cx="6" cy="18" r="2.5" />
+          <circle cx="18" cy="6" r="2.5" />
+          <path d="M8 16c2.5-2.5 5.5-5.5 8-8" />
+        </svg>
+      );
+    case "snap":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <path d="M6 3v7a6 6 0 0 0 12 0V3" />
+          <path d="M4 3h4M16 3h4" />
+          <path d="M8 20h8" />
+        </svg>
+      );
+    case "search":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <circle cx="11" cy="11" r="7" />
+          <path d="M20 20l-3.8-3.8" />
+        </svg>
+      );
+    case "layers":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <path d="M12 3L3 8l9 5 9-5-9-5z" />
+          <path d="M3 13l9 5 9-5" />
+          <path d="M3 17.5l9 4.5 9-4.5" />
+        </svg>
+      );
+    case "params":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+          <circle cx="16" cy="7" r="2.2" />
+          <circle cx="10" cy="17" r="2.2" />
+        </svg>
+      );
+    case "info":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 16v-4M12 8h.01" />
+        </svg>
+      );
+    case "chevron-down":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      );
+    case "compass":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <path d="M12 3l4.5 15L12 14.5 7.5 18 12 3z" fill="currentColor" fillOpacity="0.25" />
+        </svg>
+      );
+    case "savings":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" />
+        </svg>
+      );
+    case "help":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.5-2.5 2-2.5 3.5" />
+          <path d="M12 16.5h.01" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /* Configuração do mapa                                                */
@@ -72,31 +194,79 @@ const MAP_STYLES = [
 ];
 
 const toolItems = [
-  { id: "select", label: "Selecionar · V", shortcut: "v", icon: default2 },
-  { id: "lasso", label: "Lasso · L", shortcut: "l", icon: default3 },
-  { id: "pole", label: "Poste · P", shortcut: "p", icon: default4 },
-  { id: "cto", label: "CTO · C", shortcut: "c", icon: default5 },
-  { id: "ceo", label: "CEO · E", shortcut: "e", icon: default6 },
-  { id: "olt", label: "OLT · O", shortcut: "o", icon: default7 },
-  { id: "cable", label: "Cabo · D", shortcut: "d", icon: default8 },
+  {
+    id: "select",
+    label: "Selecionar · V",
+    shortcut: "v",
+    icon: "select",
+    title: "Selecionar, inspecionar ou arrastar ativos no mapa (Atalho: V)",
+  },
+  {
+    id: "lasso",
+    label: "Lasso · L",
+    shortcut: "l",
+    icon: "lasso",
+    title: "Seleção em área: clique em dois cantos opostos no mapa (Atalho: L)",
+  },
+  {
+    id: "pole",
+    label: "Poste · P",
+    shortcut: "p",
+    icon: "pole",
+    dotClass: "asset-dot--pole",
+    title: "Inserir Poste de Passagem — R$ 0,00 (Atalho: P)",
+  },
+  {
+    id: "cto",
+    label: "CTO · C",
+    shortcut: "c",
+    icon: "cto",
+    dotClass: "asset-dot--cto",
+    title: "Inserir Caixa de Terminação Óptica CTO Furukawa — R$ 380,00 (Atalho: C)",
+  },
+  {
+    id: "ceo",
+    label: "CEO · E",
+    shortcut: "e",
+    icon: "ceo",
+    dotClass: "asset-dot--ceo",
+    title: "Inserir Caixa de Emenda Óptica CEO Furukawa — R$ 520,00 (Atalho: E)",
+  },
+  {
+    id: "olt",
+    label: "OLT · O",
+    shortcut: "o",
+    icon: "olt",
+    dotClass: "asset-dot--olt",
+    title: "Inserir Switch / OLT Central Huawei — R$ 2.450,00 (Atalho: O)",
+  },
+  {
+    id: "cable",
+    label: "Cabo · D",
+    shortcut: "d",
+    icon: "cable",
+    title: "Inspecionar enlace óptico entre dois ativos (Atalho: D)",
+  },
 ];
 
 const layers = [
   {
     label: "Camada de Postes Parceiros",
-    icon: default14,
+    icon: "pole",
+    dotClass: "asset-dot--pole",
     enabled: true,
     bright: true,
   },
   {
     label: "Dutos e Cabos Ópticos",
-    icon: default15,
+    icon: "cable",
     enabled: true,
     bright: true,
   },
   {
     label: "Caixas CTO / CEO / OLT",
-    icon: default16,
+    icon: "cto",
+    dotClass: "asset-dot--cto",
     enabled: true,
     bright: true,
   },
@@ -173,10 +343,32 @@ function createPoleElement() {
 }
 
 // A aparência vem do CSS (.pole-marker, .pole-marker--selected e
-// [data-tool] para o cursor). Aqui só alternamos classes e atributos.
-function applyPoleStyle(element, { selected, tool, idTipoEquipamento }) {
+// [data-tool] para o cursor). Aqui atualizamos sigla, classes e atributos.
+function applyPoleStyle(element, { selected, tool, idTipoEquipamento, name }) {
   element.classList.toggle("pole-marker--selected", selected);
   element.dataset.tool = tool;
+  const acronym =
+    idTipoEquipamento === 1
+      ? "CTO"
+      : idTipoEquipamento === 2
+        ? "CEO"
+        : idTipoEquipamento === 3
+          ? "OLT"
+          : "P";
+  if (element.textContent !== acronym) {
+    element.textContent = acronym;
+  }
+  const typeDescription =
+    idTipoEquipamento === 1
+      ? "Caixa CTO Furukawa · R$ 380,00"
+      : idTipoEquipamento === 2
+        ? "Caixa de Emenda CEO Furukawa · R$ 520,00"
+        : idTipoEquipamento === 3
+          ? "Switch / OLT Central Huawei · R$ 2.450,00"
+          : "Poste de Passagem · R$ 0,00";
+  const tooltipText = `${name} (${typeDescription}) — Clique para inspecionar ou arraste para mover`;
+  element.title = tooltipText;
+  element.setAttribute("aria-label", tooltipText);
   if (idTipoEquipamento) {
     element.dataset.equip = String(idTipoEquipamento);
   } else {
@@ -461,6 +653,7 @@ function MapCanvas({
         selected: selectedIds.includes(pole.id),
         tool,
         idTipoEquipamento: pole.id_tipo_equipamento,
+        name: pole.name,
       });
     });
   }, [map, poles, selectedIds, tool]);
@@ -592,14 +785,17 @@ function ToolButton({ tool, active, onSelect }) {
       onClick={() => onSelect(tool.id)}
       aria-pressed={active}
       aria-keyshortcuts={tool.shortcut.toUpperCase()}
+      title={tool.title}
       className={cx("tool-button", active && "tool-button--active")}
     >
-      <span className="icon-slot">
-        <img
-          className="icon-fill"
-          src={tool.icon}
-          alt=""
+      {tool.dotClass && (
+        <span
+          className={cx("tool-button__dot", tool.dotClass)}
+          aria-hidden="true"
         />
+      )}
+      <span className="icon-slot">
+        <WorkspaceIcon name={tool.icon} className="h-[18px] w-[18px]" />
       </span>
       <span
         className="tool-button__label"
@@ -647,17 +843,18 @@ function ToolBar({ selectedTool, onSelectTool, snapEnabled, onToggleSnap }) {
             onClick={onToggleSnap}
             aria-pressed={snapEnabled}
             aria-keyshortcuts="S"
+            title={
+              snapEnabled
+                ? "Snap Viário ativado: os cabos acompanham o traçado das ruas (Atalho: S)"
+                : "Snap Viário desativado: cabos traçados em linha reta geodésica (Atalho: S)"
+            }
             className={cx(
               "tool-button",
               snapEnabled && "tool-button--snap-on",
             )}
           >
             <span className="icon-slot">
-              <img
-                className="icon-fill"
-                src={snapEnabled ? default10 : default9}
-                alt=""
-              />
+              <WorkspaceIcon name="snap" className="h-[18px] w-[18px]" />
             </span>
             <span
               className="tool-button__label tool-button__label--snap"
@@ -676,7 +873,7 @@ function ToolHint({ tool, selectedCount, snapEnabled, lassoStart, cableOriginId 
   if (tool === "pole") {
     text = (
       <>
-        Clique no mapa para posicionar um Poste de passagem · <kbd>Esc</kbd> para voltar
+        Clique no mapa para posicionar um Poste de passagem (R$ 0,00) · <kbd>Esc</kbd> para voltar
       </>
     );
   } else if (tool === "cto") {
@@ -744,7 +941,7 @@ function MapStats({ poles, distanceMeters, estimatedCost, savingsPercent }) {
   const oltCount = poles.filter((p) => p.id_tipo_equipamento === 3).length;
 
   return (
-    <aside className="map-stats">
+    <aside className="map-stats" aria-label="Métricas e legenda da malha óptica">
       <div className="map-stats__group">
         <span className="map-stats__label">
           Distância Total Acumulada
@@ -769,14 +966,39 @@ function MapStats({ poles, distanceMeters, estimatedCost, savingsPercent }) {
       </div>
       <span className="divider-vertical" aria-hidden="true" />
       <div className="map-stats__group map-stats__group--counts">
-        <span className="map-stats__counts">
-          {purePoles} {purePoles === 1 ? "Poste" : "Postes"} | {ctoCount} CTOs | {ceoCount} CEOs{oltCount > 0 ? ` | ${oltCount} OLTs` : ""}
-        </span>
+        <ul className="map-stats__legend-list" aria-label="Contagem de ativos por tipo">
+          <li className="map-stats__legend-pill" title="Poste de Passagem (P) · R$ 0,00">
+            <span className="asset-dot asset-dot--pole" aria-hidden="true" />
+            <span>{purePoles} {purePoles === 1 ? "Poste" : "Postes"} (P)</span>
+          </li>
+          <li className="map-stats__legend-pill" title="Caixa de Terminação Óptica (CTO) · R$ 380,00">
+            <span className="asset-dot asset-dot--cto" aria-hidden="true" />
+            <span>{ctoCount} CTOs</span>
+          </li>
+          <li className="map-stats__legend-pill" title="Caixa de Emenda Óptica (CEO) · R$ 520,00">
+            <span className="asset-dot asset-dot--ceo" aria-hidden="true" />
+            <span>{ceoCount} CEOs</span>
+          </li>
+          {oltCount > 0 && (
+            <li className="map-stats__legend-pill" title="Switch / OLT Central · R$ 2.450,00">
+              <span className="asset-dot asset-dot--olt" aria-hidden="true" />
+              <span>{oltCount} OLTs</span>
+            </li>
+          )}
+        </ul>
         <span className="map-stats__savings">
-          <img className="icon-13" src={xdefault} alt="" />
-          <span className="map-stats__savings-text">
-            {Number(savingsPercent || 0).toFixed(1)}% economia de material (<abbr title="Árvore Geradora Mínima">AGM</abbr> Prim)
+          <span className="text-emerald-400">
+            <WorkspaceIcon name="savings" className="icon-13" />
           </span>
+          {poles.length < 3 ? (
+            <span className="map-stats__savings-text map-stats__savings-text--hint">
+              Adicione 3+ ativos para poda de ciclos (<abbr title="Árvore Geradora Mínima">AGM</abbr> Prim)
+            </span>
+          ) : (
+            <span className="map-stats__savings-text">
+              {Number(savingsPercent || 0).toFixed(1)}% economia de material (<abbr title="Árvore Geradora Mínima">AGM</abbr> Prim)
+            </span>
+          )}
         </span>
       </div>
     </aside>
@@ -787,16 +1009,12 @@ function MapControls({ zoomLevel, onZoomIn, onZoomOut }) {
   return (
     <>
       <div className="map-controls">
-        <div className="map-controls__compass">
+        <div className="map-controls__compass" title="Orientação Norte">
           <span className="map-controls__compass-label">
             N
           </span>
-          <span className="map-controls__compass-icon">
-            <img
-              className="icon-fill"
-              src={image}
-              alt="Orientação norte"
-            />
+          <span className="map-controls__compass-icon" aria-label="Orientação norte">
+            <WorkspaceIcon name="compass" className="h-4 w-4" />
           </span>
         </div>
         <button
@@ -804,8 +1022,8 @@ function MapControls({ zoomLevel, onZoomIn, onZoomOut }) {
           onClick={onZoomIn}
           className="map-controls__zoom"
           aria-label="Aumentar zoom"
+          title="Aumentar zoom"
         >
-          <img className="fill-parent" src={zoom} alt="" />
           <span className="map-controls__sign map-controls__sign--plus">
             +
           </span>
@@ -815,8 +1033,8 @@ function MapControls({ zoomLevel, onZoomIn, onZoomOut }) {
           onClick={onZoomOut}
           className="map-controls__zoom map-controls__zoom--out"
           aria-label="Diminuir zoom"
+          title="Diminuir zoom"
         >
-          <img className="fill-parent" src={zoom} alt="" />
           <span className="map-controls__sign map-controls__sign--minus">
             −
           </span>
@@ -861,24 +1079,6 @@ function ScaleBar({ zoomLevel, lat }) {
   );
 }
 
-function WorkspaceHeader({ poleCount, selectedCount }) {
-  let summary = "Edição inicial · Nenhum elemento";
-  if (poleCount > 0) {
-    summary = `${poleCount} ${poleCount === 1 ? "elemento" : "elementos"}`;
-    if (selectedCount > 0) {
-      summary += ` · ${selectedCount} ${selectedCount === 1 ? "selecionado" : "selecionados"}`;
-    }
-  }
-
-  return (
-    <header className="workspace-header">
-      <p className="workspace-header__summary">
-        {summary}
-      </p>
-    </header>
-  );
-}
-
 /* ------------------------------------------------------------------ */
 /* Barra lateral                                                       */
 /* ------------------------------------------------------------------ */
@@ -886,12 +1086,8 @@ function WorkspaceHeader({ poleCount, selectedCount }) {
 function LayerSwitch({ layer, enabled, onToggle }) {
   return (
     <li className="layer-switch">
-      <span className="layer-switch__icon">
-        <img
-          className="icon-fill"
-          src={layer.icon}
-          alt=""
-        />
+      <span className="layer-switch__icon text-indigo-400">
+        <WorkspaceIcon name={layer.icon} className="h-4 w-4" />
       </span>
       <span
         className={cx(
@@ -917,6 +1113,7 @@ function LayerSwitch({ layer, enabled, onToggle }) {
 
 function Sidebar({
   poleCount,
+  selectedCount,
   trechoCount,
   searchEnabled,
   onSearch,
@@ -940,6 +1137,13 @@ function Sidebar({
     message: "",
     error: false,
   });
+
+  const cableSwatchClass =
+    cableType === "AS-200 48 FO"
+      ? "cable-swatch--as200"
+      : cableType === "AS-120 24 FO"
+        ? "cable-swatch--as120"
+        : "cable-swatch--as80";
 
   const submitSearch = async (event) => {
     event.preventDefault();
@@ -969,7 +1173,7 @@ function Sidebar({
         <div className="sidebar__header">
           <div className="brand">
             <div className="brand__mark">
-              <img className="brand__mark-icon" src={default11} alt="" />
+              <WorkspaceIcon name="brand" className="brand__mark-icon" />
             </div>
             <span className="brand__name">
               InfraRoute
@@ -985,10 +1189,16 @@ function Sidebar({
             <h1 className="project__name">
               {projectName || "Carregando projeto..."}
             </h1>
-            <span className="project__badge">
-              {snapEnabled ? "Traçado Viário (Snap ON)" : "Geodésico Direto (Snap OFF)"}
-            </span>
-            <Link className="mt-2 text-xs text-blue-600 hover:underline" to="/projetos">
+            <div className="project__badges">
+              <span className={cx("project__badge", snapEnabled && "project__badge--snap-on")}>
+                {snapEnabled ? "Traçado Viário (Snap ON)" : "Geodésico Direto (Snap OFF)"}
+              </span>
+              <span className="project__badge">
+                {poleCount} {poleCount === 1 ? "ativo" : "ativos"}
+                {selectedCount > 0 ? ` · ${selectedCount} sel.` : ""}
+              </span>
+            </div>
+            <Link className="mt-1 text-xs text-indigo-400 hover:text-indigo-300 hover:underline" to="/projetos">
               ← Voltar aos projetos
             </Link>
           </div>
@@ -997,7 +1207,9 @@ function Sidebar({
         <div className="sidebar__content">
           <form className="search" onSubmit={submitSearch} role="search">
             <label htmlFor="workspace-search" className="search__field">
-              <img className="search__icon" src={default12} alt="" />
+              <span className="search__icon">
+                <WorkspaceIcon name="search" className="h-4 w-4" />
+              </span>
               <input
                 id="workspace-search"
                 name="search"
@@ -1028,7 +1240,9 @@ function Sidebar({
             aria-labelledby="layers-heading"
           >
             <div className="panel-section__heading">
-              <img className="icon-16" src={default13} alt="" />
+              <span className="text-indigo-400">
+                <WorkspaceIcon name="layers" className="icon-16" />
+              </span>
               <h2
                 id="layers-heading"
                 className="panel-section__title"
@@ -1047,11 +1261,13 @@ function Sidebar({
               ))}
             </ul>
             <div className="panel-note">
-              <img className="icon-13" src={default17} alt="" />
+              <span className="text-slate-400">
+                <WorkspaceIcon name="info" className="icon-13" />
+              </span>
               <p className="panel-note__text">
                 {poleCount > 0
                   ? `${poleCount} ativo(s) e ${trechoCount} enlace(s) óptico(s) renderizados no mapa.`
-                  : "Nenhum ativo carregado. As camadas habilitadas permanecem vazias."}
+                  : "Nenhum ativo carregado. Escolha Poste, CTO, CEO ou OLT na barra superior e clique no mapa."}
               </p>
             </div>
           </section>
@@ -1061,7 +1277,9 @@ function Sidebar({
             aria-labelledby="parameters-heading"
           >
             <div className="panel-section__heading">
-              <img className="icon-16" src={default18} alt="" />
+              <span className="text-indigo-400">
+                <WorkspaceIcon name="params" className="icon-16" />
+              </span>
               <h2
                 id="parameters-heading"
                 className="panel-section__title"
@@ -1069,11 +1287,15 @@ function Sidebar({
                 Parâmetros do algoritmo
               </h2>
             </div>
-            <fieldset className="m-0 flex w-full flex-col items-start gap-4 border-0 p-0">
+            <fieldset className="m-0 flex w-full flex-col items-start gap-3.5 border-0 p-0">
               <legend className="sr-only">Configuração de cabos e vão máximo</legend>
               <label htmlFor="cable-type" className="field">
                 <span className="field__label">
-                  Tipo de cabo
+                  <span>Tipo de cabo</span>
+                  <span
+                    className={cx("cable-swatch", cableSwatchClass)}
+                    title={`Cor do enlace no mapa para ${cableType}`}
+                  />
                 </span>
                 <span className="field__wrap">
                   <select
@@ -1083,15 +1305,13 @@ function Sidebar({
                     onChange={(event) => onCableTypeChange(event.target.value)}
                     className="field__control"
                   >
-                    <option value="AS-80 12 FO">AS-80 12 FO</option>
-                    <option value="AS-120 24 FO">AS-120 24 FO</option>
-                    <option value="AS-200 48 FO">AS-200 48 FO</option>
+                    <option value="AS-80 12 FO">AS-80 12 FO (Azul · R$ 4,50/m)</option>
+                    <option value="AS-120 24 FO">AS-120 24 FO (Roxo · R$ 6,80/m)</option>
+                    <option value="AS-200 48 FO">AS-200 48 FO (Âmbar · R$ 9,50/m)</option>
                   </select>
-                  <img
-                    className="field__chevron"
-                    src={default23}
-                    alt=""
-                  />
+                  <span className="field__chevron">
+                    <WorkspaceIcon name="chevron-down" className="h-3.5 w-3.5" />
+                  </span>
                 </span>
               </label>
               <div className="field-row">
@@ -1229,6 +1449,7 @@ export const WorkspaceGis = () => {
   const [isGraphConnected, setIsGraphConnected] = useState(true);
   const [requestError, setRequestError] = useState("");
   const [isCalculating, setIsCalculating] = useState(false);
+  const [showQuickGuide, setShowQuickGuide] = useState(false);
 
   useEffect(() => {
     document.title = project?.nome
@@ -1737,25 +1958,67 @@ export const WorkspaceGis = () => {
       />
       {/* Camada de interface: só os controles capturam o mouse; o resto deixa o clique passar para o mapa. */}
       <div className="workspace__overlay">
-        <WorkspaceHeader
-          poleCount={poles.length}
-          selectedCount={selectedIds.length}
-        />
-        <ToolBar
-          selectedTool={tool}
-          onSelectTool={selectTool}
-          snapEnabled={snapEnabled}
-          onToggleSnap={handleToggleSnap}
-        />
-        {status === "ready" && (
-          <ToolHint
-            tool={tool}
-            selectedCount={selectedIds.length}
+        <div className="toolbar-zone">
+          <ToolBar
+            selectedTool={tool}
+            onSelectTool={selectTool}
             snapEnabled={snapEnabled}
-            lassoStart={lassoStart}
-            cableOriginId={cableOriginId}
+            onToggleSnap={handleToggleSnap}
           />
-        )}
+          {status === "ready" && (
+            <ToolHint
+              tool={tool}
+              selectedCount={selectedIds.length}
+              snapEnabled={snapEnabled}
+              lassoStart={lassoStart}
+              cableOriginId={cableOriginId}
+            />
+          )}
+        </div>
+        <div className="quick-guide-wrap">
+          <button
+            type="button"
+            onClick={() => setShowQuickGuide((prev) => !prev)}
+            aria-expanded={showQuickGuide}
+            className="quick-guide-btn"
+          >
+            <WorkspaceIcon name="help" className="h-3.5 w-3.5 text-indigo-400" />
+            <span>{showQuickGuide ? "Fechar guia" : "Como usar"}</span>
+          </button>
+          {showQuickGuide && (
+            <aside
+              className="quick-guide-card"
+              aria-label="Guia rápido do Workspace GIS"
+            >
+              <div className="mb-2 flex items-center justify-between border-b border-slate-800 pb-2">
+                <strong className="text-xs font-semibold text-white">
+                  Fluxo de Projeto (<abbr title="Árvore Geradora Mínima">AGM</abbr> Prim)
+                </strong>
+                <button
+                  type="button"
+                  onClick={() => setShowQuickGuide(false)}
+                  className="text-slate-400 hover:text-white"
+                  aria-label="Fechar guia rápido"
+                >
+                  ✕
+                </button>
+              </div>
+              <ol className="m-0 flex list-decimal flex-col gap-2 pl-4 text-[11px] leading-4 text-slate-300">
+                <li>
+                  <strong>Posicione ativos:</strong> escolha{" "}
+                  <kbd>P</kbd> (Poste), <kbd>C</kbd> (<abbr title="Caixa de Terminação Óptica">CTO</abbr>),{" "}
+                  <kbd>E</kbd> (<abbr title="Caixa de Emenda Óptica">CEO</abbr>) ou <kbd>O</kbd> (<abbr title="Optical Line Terminal">OLT</abbr>) e clique sobre o mapa.
+                </li>
+                <li>
+                  <strong>Ajuste o traçado:</strong> ative <kbd>S</kbd> (Snap ON) para seguir as ruas ou escolha o modelo de fibra na barra lateral.
+                </li>
+                <li>
+                  <strong>Otimize e inspecione:</strong> com 3+ ativos, o algoritmo de Prim poda ciclos redundantes. Clique em qualquer marcador ou cabo para ver custos e distâncias.
+                </li>
+              </ol>
+            </aside>
+          )}
+        </div>
         {!isGraphConnected && poles.length >= 2 && (
           <div
             role="alert"
@@ -1874,6 +2137,7 @@ export const WorkspaceGis = () => {
       </div>
       <Sidebar
         poleCount={poles.length}
+        selectedCount={selectedIds.length}
         trechoCount={trechos.length}
         searchEnabled={status === "ready"}
         onSearch={searchAddress}
