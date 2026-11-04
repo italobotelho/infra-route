@@ -35,6 +35,13 @@ from backend.services.exceptions import (
     ValidacaoDominioError,
 )
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(".env.local")
+    load_dotenv(".env")
+except ImportError:
+    pass
+
 BCRYPT_DEFAULT_ROUNDS: int = int(os.getenv("BCRYPT_ROUNDS", "12"))
 BCRYPT_MAX_PASSWORD_BYTES: int = 72
 

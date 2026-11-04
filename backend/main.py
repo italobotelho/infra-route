@@ -4,6 +4,12 @@ CORS restrito e cabeçalhos HTTP de segurança (Padrão OWASP).
 """
 
 import os
+try:
+    from dotenv import load_dotenv
+    load_dotenv(".env.local")
+    load_dotenv(".env")
+except ImportError:
+    pass
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
