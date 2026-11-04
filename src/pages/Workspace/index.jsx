@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { apiRequest, getSession } from "../../lib/api";
+import {
+  CEP_PATTERN,
+  lookupCep as lookupCepService,
+  nominatimSearch as nominatimSearchService,
+} from "../../services/geocodingService";
+import {
+  STORAGE_KEYS,
+  getStorageItem,
+  setStorageItem,
+} from "../../utils/storage";
 import "./workspace-gis.css";
 import xdefault from "./assets/default.svg";
 import default2 from "./assets/default-2.svg";
@@ -124,48 +134,15 @@ function loadGoogleMaps(apiKey) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Busca de endereço e CEP (serviços gratuitos)                        */
+/* Busca de endereço e CEP (serviços gratuitos em src/services)        */
 /* ------------------------------------------------------------------ */
 
-const CEP_PATTERN = /^\d{5}-?\d{3}$/;
-
-// Nominatim (OpenStreetMap) permite no máximo 1 consulta por segundo para o
-// app inteiro e proíbe busca enquanto digita. Por isso: fila, intervalo
-// mínimo entre chamadas e cache dos resultados.
-const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
-const NOMINATIM_MIN_INTERVAL_MS = 1100;
-const nominatimCache = new Map();
-let nominatimQueue = Promise.resolve();
-let lastNominatimCall = 0;
-
 function nominatimSearch(params) {
-  const key = params.toString();
-  if (nominatimCache.has(key)) return Promise.resolve(nominatimCache.get(key));
-
-  const run = async () => {
-    const wait = lastNominatimCall + NOMINATIM_MIN_INTERVAL_MS - Date.now();
-    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-    lastNominatimCall = Date.now();
-
-    const response = await fetch(`${NOMINATIM_URL}?${key}`);
-    if (!response.ok) throw new Error(`Nominatim respondeu ${response.status}`);
-    const data = await response.json();
-    nominatimCache.set(key, data);
-    return data;
-  };
-
-  const result = nominatimQueue.then(run);
-  nominatimQueue = result.catch(() => {});
-  return result;
+  return nominatimSearchService(params);
 }
 
-// ViaCEP devolve rua, bairro e cidade do CEP (sem coordenadas).
 async function lookupCep(cep) {
-  const digits = cep.replace(/\D/g, "");
-  const response = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
-  if (!response.ok) throw new Error(`ViaCEP respondeu ${response.status}`);
-  const data = await response.json();
-  return data.erro ? null : data;
+  return lookupCepService(cep);
 }
 
 const TOOL_EQUIPMENT_CONFIG = {
@@ -627,7 +604,7 @@ function ToolButton({ tool, active, onSelect }) {
       <span
         className="tool-button__label"
       >
-        {tool.label}
+        {tool.label.split(" · ")[0]} · <kbd>{tool.shortcut.toUpperCase()}</kbd>
       </span>
     </button>
   );
@@ -639,49 +616,57 @@ function ToolBar({ selectedTool, onSelectTool, snapEnabled, onToggleSnap }) {
       className="toolbar"
       aria-label="Ferramentas de edição"
     >
-      {toolItems.slice(0, 2).map((tool) => (
-        <ToolButton
-          key={tool.id}
-          tool={tool}
-          active={selectedTool === tool.id}
-          onSelect={onSelectTool}
-        />
-      ))}
-
-      <span className="divider-vertical" aria-hidden="true" />
-      {toolItems.slice(2).map((tool) => (
-        <ToolButton
-          key={tool.id}
-          tool={tool}
-          active={selectedTool === tool.id}
-          onSelect={onSelectTool}
-        />
-      ))}
-
-      <span className="divider-vertical" aria-hidden="true" />
-      <button
-        type="button"
-        onClick={onToggleSnap}
-        aria-pressed={snapEnabled}
-        aria-keyshortcuts="S"
-        className={cx(
-          "tool-button",
-          snapEnabled && "tool-button--snap-on",
-        )}
-      >
-        <span className="icon-slot">
-          <img
-            className="icon-fill"
-            src={snapEnabled ? default10 : default9}
-            alt=""
-          />
-        </span>
-        <span
-          className="tool-button__label tool-button__label--snap"
-        >
-          Snap {snapEnabled ? "ON" : "OFF"} · S
-        </span>
-      </button>
+      <ul className="toolbar__list">
+        {toolItems.slice(0, 2).map((tool) => (
+          <li key={tool.id}>
+            <ToolButton
+              tool={tool}
+              active={selectedTool === tool.id}
+              onSelect={onSelectTool}
+            />
+          </li>
+        ))}
+        <li aria-hidden="true">
+          <span className="divider-vertical" />
+        </li>
+        {toolItems.slice(2).map((tool) => (
+          <li key={tool.id}>
+            <ToolButton
+              tool={tool}
+              active={selectedTool === tool.id}
+              onSelect={onSelectTool}
+            />
+          </li>
+        ))}
+        <li aria-hidden="true">
+          <span className="divider-vertical" />
+        </li>
+        <li>
+          <button
+            type="button"
+            onClick={onToggleSnap}
+            aria-pressed={snapEnabled}
+            aria-keyshortcuts="S"
+            className={cx(
+              "tool-button",
+              snapEnabled && "tool-button--snap-on",
+            )}
+          >
+            <span className="icon-slot">
+              <img
+                className="icon-fill"
+                src={snapEnabled ? default10 : default9}
+                alt=""
+              />
+            </span>
+            <span
+              className="tool-button__label tool-button__label--snap"
+            >
+              Snap {snapEnabled ? "ON" : "OFF"} · <kbd>S</kbd>
+            </span>
+          </button>
+        </li>
+      </ul>
     </nav>
   );
 }
@@ -689,26 +674,50 @@ function ToolBar({ selectedTool, onSelectTool, snapEnabled, onToggleSnap }) {
 function ToolHint({ tool, selectedCount, snapEnabled, lassoStart, cableOriginId }) {
   let text;
   if (tool === "pole") {
-    text = "Clique no mapa para posicionar um Poste de passagem · Esc para voltar";
+    text = (
+      <>
+        Clique no mapa para posicionar um Poste de passagem · <kbd>Esc</kbd> para voltar
+      </>
+    );
   } else if (tool === "cto") {
-    text = "Clique no mapa para posicionar uma Caixa CTO (R$ 380,00) · Esc para voltar";
+    text = (
+      <>
+        Clique no mapa para posicionar uma Caixa <abbr title="Caixa de Terminação Óptica">CTO</abbr> (R$ 380,00) · <kbd>Esc</kbd> para voltar
+      </>
+    );
   } else if (tool === "ceo") {
-    text = "Clique no mapa para posicionar uma Caixa de Emenda CEO (R$ 520,00) · Esc para voltar";
+    text = (
+      <>
+        Clique no mapa para posicionar uma Caixa de Emenda <abbr title="Caixa de Emenda Óptica">CEO</abbr> (R$ 520,00) · <kbd>Esc</kbd> para voltar
+      </>
+    );
   } else if (tool === "olt") {
-    text = "Clique no mapa para posicionar um Switch / OLT POP (R$ 2.450,00) · Esc para voltar";
+    text = (
+      <>
+        Clique no mapa para posicionar um Switch / <abbr title="Optical Line Terminal">OLT</abbr> POP (R$ 2.450,00) · <kbd>Esc</kbd> para voltar
+      </>
+    );
   } else if (tool === "lasso") {
-    text = lassoStart
-      ? "Lasso: clique no 2º canto do retângulo para selecionar os ativos da área · Esc cancela"
-      : "Lasso: clique no 1º canto no mapa para abrir uma caixa de seleção múltipla";
+    text = lassoStart ? (
+      <>
+        Lasso: clique no 2º canto do retângulo para selecionar os ativos da área · <kbd>Esc</kbd> cancela
+      </>
+    ) : (
+      "Lasso: clique no 1º canto no mapa para abrir uma caixa de seleção múltipla"
+    );
   } else if (tool === "cable") {
     text = cableOriginId
       ? `Cabo: origem #${cableOriginId} selecionada · clique no ativo de destino para inspecionar o enlace`
       : "Cabo: clique no ativo de origem e depois no destino para inspecionar o trecho óptico";
   } else if (tool === "select") {
     text =
-      selectedCount > 0
-        ? `${selectedCount} selecionado${selectedCount > 1 ? "s" : ""} · Delete remove · arraste para mover`
-        : `Clique em um ativo ou trecho óptico para inspecionar · Modo ${snapEnabled ? "Snap Viário ON" : "Geodésico Direto OFF"}`;
+      selectedCount > 0 ? (
+        <>
+          {selectedCount} selecionado{selectedCount > 1 ? "s" : ""} · <kbd>Delete</kbd> remove · arraste para mover
+        </>
+      ) : (
+        `Clique em um ativo ou trecho óptico para inspecionar · Modo ${snapEnabled ? "Snap Viário ON" : "Geodésico Direto OFF"}`
+      );
   } else {
     const item = toolItems.find((entry) => entry.id === tool);
     text = `${item?.label.split(" · ")[0]} em modo de visualização`;
@@ -766,7 +775,7 @@ function MapStats({ poles, distanceMeters, estimatedCost, savingsPercent }) {
         <span className="map-stats__savings">
           <img className="icon-13" src={xdefault} alt="" />
           <span className="map-stats__savings-text">
-            {Number(savingsPercent || 0).toFixed(1)}% economia de material (AGM Prim)
+            {Number(savingsPercent || 0).toFixed(1)}% economia de material (<abbr title="Árvore Geradora Mínima">AGM</abbr> Prim)
           </span>
         </span>
       </div>
@@ -829,13 +838,21 @@ function ScaleBar({ zoomLevel, lat }) {
     (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoomLevel;
   const distance = niceDistance(metersPerPixel * 58);
   const width = Math.round(distance / metersPerPixel);
+  const widthClass =
+    width >= 88
+      ? "scale-bar__line--xl"
+      : width >= 72
+        ? "scale-bar__line--lg"
+        : width >= 56
+          ? "scale-bar__line--md"
+          : "scale-bar__line--sm";
   const label = distance >= 1000 ? `${distance / 1000} km` : `${distance} m`;
 
   return (
     <div className="scale-bar">
       <span
-        className="scale-bar__line"
-        style={{ width }}
+        className={cx("scale-bar__line", widthClass)}
+        aria-hidden="true"
       />
       <span className="scale-bar__label">
         {label}
@@ -868,7 +885,7 @@ function WorkspaceHeader({ poleCount, selectedCount }) {
 
 function LayerSwitch({ layer, enabled, onToggle }) {
   return (
-    <div className="layer-switch">
+    <li className="layer-switch">
       <span className="layer-switch__icon">
         <img
           className="icon-fill"
@@ -894,7 +911,7 @@ function LayerSwitch({ layer, enabled, onToggle }) {
       >
         <span className="layer-switch__knob" />
       </button>
-    </div>
+    </li>
   );
 }
 
@@ -958,16 +975,16 @@ function Sidebar({
               InfraRoute
             </span>
             <span className="brand__tag">
-              GIS
+              <abbr title="Geographic Information System (Sistema de Informações Geográficas)">GIS</abbr>
             </span>
           </div>
           <div className="project">
             <span className="project__eyebrow">
               WORKSPACE DE ENGENHARIA
             </span>
-            <h2 className="project__name">
+            <h1 className="project__name">
               {projectName || "Carregando projeto..."}
-            </h2>
+            </h1>
             <span className="project__badge">
               {snapEnabled ? "Traçado Viário (Snap ON)" : "Geodésico Direto (Snap OFF)"}
             </span>
@@ -979,9 +996,11 @@ function Sidebar({
         <div className="divider-horizontal" />
         <div className="sidebar__content">
           <form className="search" onSubmit={submitSearch} role="search">
-            <label className="search__field">
+            <label htmlFor="workspace-search" className="search__field">
               <img className="search__icon" src={default12} alt="" />
               <input
+                id="workspace-search"
+                name="search"
                 type="search"
                 value={search}
                 onChange={changeSearch}
@@ -1010,14 +1029,14 @@ function Sidebar({
           >
             <div className="panel-section__heading">
               <img className="icon-16" src={default13} alt="" />
-              <h3
+              <h2
                 id="layers-heading"
                 className="panel-section__title"
               >
                 Gerenciador de Camadas
-              </h3>
+              </h2>
             </div>
-            <div className="layer-list">
+            <ul className="layer-list">
               {layers.map((layer, index) => (
                 <LayerSwitch
                   key={layer.label}
@@ -1026,7 +1045,7 @@ function Sidebar({
                   onToggle={() => updateLayer(index)}
                 />
               ))}
-            </div>
+            </ul>
             <div className="panel-note">
               <img className="icon-13" src={default17} alt="" />
               <p className="panel-note__text">
@@ -1043,73 +1062,84 @@ function Sidebar({
           >
             <div className="panel-section__heading">
               <img className="icon-16" src={default18} alt="" />
-              <h3
+              <h2
                 id="parameters-heading"
                 className="panel-section__title"
               >
                 Parâmetros do algoritmo
-              </h3>
+              </h2>
             </div>
-            <label className="field">
-              <span className="field__label">
-                Tipo de cabo
-              </span>
-              <span className="field__wrap">
-                <select
-                  value={cableType}
-                  onChange={(event) => onCableTypeChange(event.target.value)}
-                  className="field__control"
-                >
-                  <option value="AS-80 12 FO">AS-80 12 FO</option>
-                  <option value="AS-120 24 FO">AS-120 24 FO</option>
-                  <option value="AS-200 48 FO">AS-200 48 FO</option>
-                </select>
-                <img
-                  className="field__chevron"
-                  src={default23}
-                  alt=""
-                />
-              </span>
-            </label>
-            <div className="field-row">
-              <label className="field field--grow">
+            <fieldset className="m-0 flex w-full flex-col items-start gap-4 border-0 p-0">
+              <legend className="sr-only">Configuração de cabos e vão máximo</legend>
+              <label htmlFor="cable-type" className="field">
                 <span className="field__label">
-                  Cabo/m
+                  Tipo de cabo
                 </span>
                 <span className="field__wrap">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    value={cablePrice}
-                    onChange={(event) => onCablePriceChange(event.target.value)}
-                    className="field__control field__control--unit-sm"
-                    aria-label="Preço do cabo por metro"
+                  <select
+                    id="cable-type"
+                    name="cableType"
+                    value={cableType}
+                    onChange={(event) => onCableTypeChange(event.target.value)}
+                    className="field__control"
+                  >
+                    <option value="AS-80 12 FO">AS-80 12 FO</option>
+                    <option value="AS-120 24 FO">AS-120 24 FO</option>
+                    <option value="AS-200 48 FO">AS-200 48 FO</option>
+                  </select>
+                  <img
+                    className="field__chevron"
+                    src={default23}
+                    alt=""
                   />
-                  <span className="field__unit">
-                    R$
-                  </span>
                 </span>
               </label>
-              <label className="field field--grow">
-                <span className="field__label">
-                  Vão máximo
-                </span>
-                <span className="field__wrap">
-                  <input
-                    type="number"
-                    min="1"
-                    value={maxSpan}
-                    onChange={(event) => onMaxSpanChange(event.target.value)}
-                    className="field__control field__control--unit-md"
-                    aria-label="Vão máximo em metros"
-                  />
-                  <span className="field__unit field__unit--muted">
-                    m
+              <div className="field-row">
+                <label htmlFor="cable-price" className="field field--grow">
+                  <span className="field__label">
+                    Cabo/m
                   </span>
-                </span>
-              </label>
-            </div>
+                  <span className="field__wrap">
+                    <input
+                      id="cable-price"
+                      name="cablePrice"
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      required
+                      value={cablePrice}
+                      onChange={(event) => onCablePriceChange(event.target.value)}
+                      className="field__control field__control--unit-sm"
+                      aria-label="Preço do cabo por metro"
+                    />
+                    <span className="field__unit">
+                      R$
+                    </span>
+                  </span>
+                </label>
+                <label htmlFor="max-span" className="field field--grow">
+                  <span className="field__label">
+                    Vão máximo
+                  </span>
+                  <span className="field__wrap">
+                    <input
+                      id="max-span"
+                      name="maxSpan"
+                      type="number"
+                      min="1"
+                      required
+                      value={maxSpan}
+                      onChange={(event) => onMaxSpanChange(event.target.value)}
+                      className="field__control field__control--unit-md"
+                      aria-label="Vão máximo em metros"
+                    />
+                    <span className="field__unit field__unit--muted">
+                      m
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
           </section>
         </div>
         <footer className="sidebar__footer">
@@ -1158,12 +1188,17 @@ export const WorkspaceGis = () => {
   const [searchParams] = useSearchParams();
   const session = getSession();
   const projectId = Number(searchParams.get("id_projeto"));
+  const savedWorkspaceConfig = getStorageItem(STORAGE_KEYS.CONFIG_WORKSPACE, null);
   const [map, setMap] = useState(null);
   const [status, setStatus] = useState("loading");
   const [view, setView] = useState({ zoom: DEFAULT_ZOOM, lat: MAP_CENTER.lat });
   const [tool, setTool] = useState("select");
-  const [snapEnabled, setSnapEnabled] = useState(true);
-  const snapEnabledRef = useRef(true);
+  const [snapEnabled, setSnapEnabled] = useState(() =>
+    typeof savedWorkspaceConfig?.snapEnabled === "boolean"
+      ? savedWorkspaceConfig.snapEnabled
+      : true,
+  );
+  const snapEnabledRef = useRef(snapEnabled);
   snapEnabledRef.current = snapEnabled;
   const [poles, setPoles] = useState([]);
   const [trechos, setTrechos] = useState([]);
@@ -1174,15 +1209,43 @@ export const WorkspaceGis = () => {
   const [distanceMeters, setDistanceMeters] = useState(0);
   const [estimatedCost, setEstimatedCost] = useState(0);
   const [savingsPercent, setSavingsPercent] = useState(0);
-  const [cableType, setCableType] = useState("AS-80 12 FO");
-  const [cablePrice, setCablePrice] = useState(4.5);
-  const [maxSpan, setMaxSpan] = useState(2000);
-  const [layerState, setLayerState] = useState(() => layers.map((layer) => layer.enabled));
+  const [cableType, setCableType] = useState(
+    () => savedWorkspaceConfig?.cableType || "AS-80 12 FO",
+  );
+  const [cablePrice, setCablePrice] = useState(
+    () => savedWorkspaceConfig?.cablePrice ?? 4.5,
+  );
+  const [maxSpan, setMaxSpan] = useState(
+    () => savedWorkspaceConfig?.maxSpan ?? 2000,
+  );
+  const [layerState, setLayerState] = useState(() =>
+    Array.isArray(savedWorkspaceConfig?.layerState) &&
+    savedWorkspaceConfig.layerState.length === layers.length
+      ? savedWorkspaceConfig.layerState
+      : layers.map((layer) => layer.enabled),
+  );
   const [lassoStart, setLassoStart] = useState(null);
   const [cableOriginId, setCableOriginId] = useState(null);
   const [isGraphConnected, setIsGraphConnected] = useState(true);
   const [requestError, setRequestError] = useState("");
   const [isCalculating, setIsCalculating] = useState(false);
+
+  useEffect(() => {
+    document.title = project?.nome
+      ? `${project.nome} | Workspace GIS — InfraRoute`
+      : "Workspace GIS | InfraRoute — Engenharia de Redes";
+  }, [project?.nome]);
+
+  // Persiste preferências de interface não sensíveis (Aula 14)
+  useEffect(() => {
+    setStorageItem(STORAGE_KEYS.CONFIG_WORKSPACE, {
+      snapEnabled,
+      cableType,
+      cablePrice,
+      maxSpan,
+      layerState,
+    });
+  }, [snapEnabled, cableType, cablePrice, maxSpan, layerState]);
 
   const toggleLayer = useCallback((index) => {
     setLayerState((current) =>
@@ -1748,9 +1811,15 @@ export const WorkspaceGis = () => {
                 onClick={() => removeSelectedPoles(selectedIds)}
                 className="mt-1 w-full rounded-lg bg-red-600/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500"
               >
-                {selectedPolesList.length === 1
-                  ? "Remover Ativo Selecionado (Del)"
-                  : `Remover ${selectedPolesList.length} Ativos (Del)`}
+                {selectedPolesList.length === 1 ? (
+                  <>
+                    Remover Ativo Selecionado (<kbd>Del</kbd>)
+                  </>
+                ) : (
+                  <>
+                    Remover {selectedPolesList.length} Ativos (<kbd>Del</kbd>)
+                  </>
+                )}
               </button>
             </aside>
           );

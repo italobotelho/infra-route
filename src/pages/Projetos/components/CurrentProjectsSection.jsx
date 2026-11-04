@@ -233,6 +233,10 @@ export const CurrentProjectsSection = () => {
   const [error, setError] = useState("");
   const [isCreating, setIsCreating] = useState(false);
 
+  useEffect(() => {
+    document.title = "Projetos | InfraRoute — Gestão de Expansão OSP/FTTH";
+  }, []);
+
   const loadProjects = async () => {
     setLoading(true);
     setError("");
@@ -280,6 +284,15 @@ export const CurrentProjectsSection = () => {
     const startIdx = (safePage - 1) * ITEMS_PER_PAGE;
     return filteredProjects.slice(startIdx, startIdx + ITEMS_PER_PAGE);
   }, [filteredProjects, safePage]);
+
+  const pageTotalCost = useMemo(
+    () => paginatedProjects.reduce((acc, item) => acc + Number(item.custo_estimado || 0), 0),
+    [paginatedProjects],
+  );
+  const pageTotalMeters = useMemo(
+    () => paginatedProjects.reduce((acc, item) => acc + Number(item.metragem_total || 0), 0),
+    [paginatedProjects],
+  );
 
   const updateProjectStatus = async (idProjeto, novoStatus) => {
     setIsUpdatingStatus(true);
@@ -429,17 +442,17 @@ export const CurrentProjectsSection = () => {
   };
 
   return (
-    <main className="flex flex-col items-start gap-6 p-8 relative flex-1 self-stretch grow">
+    <main className="relative flex flex-1 grow flex-col items-start gap-6 self-stretch p-4 sm:p-6 lg:p-8">
       {session && session.email_verificado === false && (
         <section
           role="region"
           aria-label="Verificação de e-mail"
-          className="flex flex-wrap items-center justify-between gap-4 w-full rounded-xl border border-amber-300 bg-amber-50 px-5 py-4 text-slate-900 shadow-sm"
+          className="flex w-full flex-wrap items-center justify-between gap-4 rounded-xl border border-amber-300 bg-amber-50 px-5 py-4 text-slate-900 shadow-sm"
         >
           <div className="flex flex-col gap-1">
-            <span className="text-sm font-semibold text-amber-900">
+            <strong className="text-sm font-semibold text-amber-900">
               Confirme seu e-mail corporativo ({session.email})
-            </span>
+            </strong>
             <span className="text-xs text-amber-800">
               Digite o código de 6 dígitos enviado para sua conta.
               {session.codigo_verificacao_dev && (
@@ -454,10 +467,17 @@ export const CurrentProjectsSection = () => {
               </span>
             )}
           </div>
-          <form onSubmit={verifyEmailOtp} className="flex items-center gap-2">
+          <form onSubmit={verifyEmailOtp} className="flex flex-wrap items-center gap-2">
+            <label htmlFor="otp-code" className="sr-only">
+              Código de verificação de 6 dígitos
+            </label>
             <input
+              id="otp-code"
+              name="otpCode"
               type="text"
               inputMode="numeric"
+              required
+              pattern="\d{6}"
               maxLength={6}
               placeholder="000000"
               value={otpCode}
@@ -481,288 +501,374 @@ export const CurrentProjectsSection = () => {
           </form>
         </section>
       )}
-      <header className="flex flex-col min-h-20 items-start gap-4 relative self-stretch w-full flex-[0_0_auto]">
-        <div className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
+      <header className="relative flex min-h-20 w-full flex-[0_0_auto] flex-col items-start gap-4 self-stretch">
+        <div className="relative flex w-full flex-[0_0_auto] items-center justify-between self-stretch">
           <nav
             aria-label="Breadcrumb"
-            className="inline-flex items-center gap-2 relative flex-[0_0_auto]"
+            className="relative inline-flex flex-[0_0_auto] items-center"
           >
-            <span className="mt-[-1.00px] text-slate-600 relative w-fit [font-family:'Inter-Regular',Helvetica] font-normal text-[11px] tracking-[0] leading-[normal] whitespace-nowrap">
-              Workspace
-            </span>
-            <span className="relative w-3 h-3" aria-hidden="true">
-              <img
-                className="absolute w-[69.58%] h-[82.08%] top-[17.92%] left-[30.42%]"
-                alt=""
-                src={xdefault}
-              />
-            </span>
-            <span className="relative w-fit mt-[-1.00px] [font-family:'Inter-Medium',Helvetica] font-medium text-slate-900 text-[11px] tracking-[0] leading-[normal] whitespace-nowrap">
-              Projetos
-            </span>
+            <ol className="m-0 inline-flex list-none items-center gap-2 p-0">
+              <li className="inline-flex items-center gap-2">
+                <span className="relative w-fit whitespace-nowrap text-[11px] font-normal leading-[normal] tracking-[0] text-slate-600">
+                  Workspace
+                </span>
+                <span className="relative h-3 w-3" aria-hidden="true">
+                  <img
+                    className="absolute top-[17.92%] left-[30.42%] h-[82.08%] w-[69.58%]"
+                    alt=""
+                    src={xdefault}
+                  />
+                </span>
+              </li>
+              <li>
+                <span
+                  aria-current="page"
+                  className="relative w-fit whitespace-nowrap text-[11px] font-medium leading-[normal] tracking-[0] text-slate-900"
+                >
+                  Projetos
+                </span>
+              </li>
+            </ol>
           </nav>
-          <p className="mt-[-1.00px] text-slate-600 relative w-fit [font-family:'Inter-Regular',Helvetica] font-normal text-[11px] tracking-[0] leading-[normal] whitespace-nowrap">
-            Gestão de expansão OSP / FTTH
+          <p className="relative w-fit whitespace-nowrap text-[11px] font-normal leading-[normal] tracking-[0] text-slate-600">
+            Gestão de expansão <abbr title="Outside Plant (Planta Externa)">OSP</abbr> / <abbr title="Fiber to the Home">FTTH</abbr>
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-[12px_24px] relative self-stretch w-full flex-[0_0_auto]">
-          <h1 className="relative flex-1 [font-family:'Inter-Bold',Helvetica] font-bold text-slate-900 text-[32px] tracking-[-0.26px] leading-10">
+        <div className="relative flex w-full flex-[0_0_auto] flex-wrap items-center gap-[12px_24px] self-stretch">
+          <h1 className="relative flex-1 text-[32px] font-bold leading-10 tracking-[-0.26px] text-slate-900">
             Projetos atuais
           </h1>
-          <div className="inline-flex items-center gap-3 relative flex-[0_0_auto]">
-            <label className="flex w-[210px] h-11 items-center gap-3 px-4 py-0 relative bg-white rounded-lg border border-solid border-slate-300">
+          <div className="relative inline-flex flex-[0_0_auto] flex-wrap items-center gap-3">
+            <label
+              htmlFor="search-projects"
+              className="relative flex h-11 w-[210px] items-center gap-3 rounded-lg border border-solid border-slate-300 bg-white px-4 py-0"
+            >
               <img
-                className="relative w-[19.7px] h-[19.7px]"
+                className="relative h-[19.7px] w-[19.7px]"
                 alt=""
                 src={default28}
               />
+              <span className="sr-only">Buscar projetos</span>
               <input
+                id="search-projects"
+                name="query"
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Buscar projetos..."
                 aria-label="Buscar projetos"
-                className="relative min-w-0 flex-1 bg-transparent outline-none [font-family:'Inter-Regular',Helvetica] font-normal text-slate-600 text-xs tracking-[0] leading-5 placeholder:text-slate-600"
+                className="relative min-w-0 flex-1 bg-transparent text-xs font-normal leading-5 tracking-[0] text-slate-600 outline-none placeholder:text-slate-600"
               />
             </label>
             <button
               type="button"
               onClick={refreshProjects}
-              className="inline-flex h-12 items-center justify-center gap-2.5 px-6 py-3 relative flex-[0_0_auto] bg-white rounded-lg border border-solid border-slate-300"
+              className="relative inline-flex h-12 flex-[0_0_auto] items-center justify-center gap-2.5 rounded-lg border border-solid border-slate-300 bg-white px-6 py-3"
             >
-              <span className="text-blue-700 relative w-fit mt-[-1.00px] [font-family:'Inter-SemiBold',Helvetica] font-semibold text-sm text-center tracking-[0] leading-6 whitespace-nowrap">
+              <span className="relative w-fit whitespace-nowrap text-center text-sm font-semibold leading-6 tracking-[0] text-blue-700">
                 Refresh ↻
               </span>
             </button>
             <button
               type="button"
-              className="inline-flex h-12 items-center justify-center gap-2.5 px-6 py-3 relative flex-[0_0_auto] bg-white rounded-lg border border-solid border-slate-300"
+              className="relative inline-flex h-12 flex-[0_0_auto] items-center justify-center gap-2.5 rounded-lg border border-solid border-slate-300 bg-white px-6 py-3"
             >
-              <span className="text-blue-700 relative w-fit mt-[-1.00px] [font-family:'Inter-SemiBold',Helvetica] font-semibold text-sm text-center tracking-[0] leading-6 whitespace-nowrap">
+              <span className="relative w-fit whitespace-nowrap text-center text-sm font-semibold leading-6 tracking-[0] text-blue-700">
                 Customize ⚙
               </span>
             </button>
             <button
               type="button"
               onClick={() => setShowCreateForm(true)}
-              className="inline-flex h-12 items-center justify-center gap-2.5 px-6 py-3 relative flex-[0_0_auto] bg-blue-600 rounded-lg"
+              className="relative inline-flex h-12 flex-[0_0_auto] items-center justify-center gap-2.5 rounded-lg bg-blue-600 px-6 py-3"
             >
-              <span className="text-white relative w-fit mt-[-1.00px] [font-family:'Inter-SemiBold',Helvetica] font-semibold text-sm text-center tracking-[0] leading-6 whitespace-nowrap">
+              <span className="relative w-fit whitespace-nowrap text-center text-sm font-semibold leading-6 tracking-[0] text-white">
                 New project +
               </span>
             </button>
           </div>
         </div>
       </header>
-      <section className="flex flex-col items-start gap-4 relative self-stretch w-full flex-[0_0_auto]">
-        <div className="flex flex-col items-start relative self-stretch w-full flex-[0_0_auto] overflow-x-auto">
-          <div className="flex flex-col min-w-[1016px] items-start relative self-stretch w-full flex-[0_0_auto] bg-white rounded-lg overflow-hidden border border-solid border-slate-200">
-            <div
-              role="row"
-              className="flex h-[52px] items-center gap-3 px-4 py-0 relative self-stretch w-full bg-slate-50 border-b [border-bottom-style:solid] border-slate-200"
-            >
-              <div className="flex min-w-6 items-center gap-2 relative flex-1 grow">
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={toggleAll}
-                  aria-label="Selecionar todos os projetos"
-                  className="relative w-4 h-4 rounded border border-solid border-slate-300 accent-blue-600"
-                />
-              </div>
-              {headerColumns.map((column) => (
-                <div
-                  key={column.label}
-                  className={`flex items-center gap-2 relative flex-1 grow ${column.className}`}
-                >
-                  {column.label === "Nome" ? (
-                    <button
-                      type="button"
-                      onClick={() => setSortAsc((prev) => !prev)}
-                      className="flex items-center gap-2 bg-transparent border-0 p-0 cursor-pointer text-left"
-                      title="Ordenar por nome"
-                    >
-                      <span className="leading-[15px] whitespace-pre-line relative flex-1 mt-[-1.00px] [font-family:'Inter-SemiBold',Helvetica] font-semibold text-slate-600 text-[10px] tracking-[0]">
-                        {column.label}
-                      </span>
-                      <span className="relative w-3 h-3" aria-hidden="true">
-                        <img
-                          className={`absolute w-[86.25%] h-[86.25%] top-[13.75%] left-[13.75%] transition-transform ${sortAsc ? "" : "rotate-180"}`}
-                          alt=""
-                          src={image}
-                        />
-                      </span>
-                    </button>
-                  ) : (
-                    <span className="leading-[15px] whitespace-pre-line relative flex-1 mt-[-1.00px] [font-family:'Inter-SemiBold',Helvetica] font-semibold text-slate-600 text-[10px] tracking-[0]">
-                      {column.label}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-            {loading ? (
-              <p className="p-6 text-sm text-slate-600">Carregando projetos...</p>
-            ) : error && projects.length === 0 ? (
-              <p className="p-6 text-sm text-red-600" role="alert">{error}</p>
-            ) : filteredProjects.length === 0 ? (
-              <p className="p-6 text-sm text-slate-600">Nenhum projeto encontrado.</p>
-            ) : paginatedProjects.map((project, index) => {
-              const ActionIcon = project.artwork.action;
-              const calendarIcon = calendarIcons[index % calendarIcons.length];
 
-              return (
-                <div
-                  role="row"
-                  key={project.id_projeto}
-                  className="flex h-14 items-center gap-3 px-4 py-0 relative self-stretch w-full bg-white border-b [border-bottom-style:solid] border-slate-200"
-                >
-                  <div className="flex min-w-6 items-center gap-2 relative flex-1 grow">
-                    <input
-                      type="checkbox"
-                      checked={selected.includes(project.code)}
-                      onChange={() => toggleProject(project.code)}
-                      aria-label={`Selecionar ${project.name}`}
-                      className="relative w-4 h-4 rounded border border-solid border-slate-300 accent-blue-600"
-                    />
-                  </div>
-                  <div className="flex min-w-[172px] items-center gap-2 relative flex-1 grow">
-                    <div className="relative w-[18px] h-[18px]">
-                      <img
-                        className="absolute w-[96.39%] h-[92.22%] top-[7.78%] left-[3.61%]"
-                        alt=""
-                        src={project.artwork.folder}
-                      />
-                    </div>
-                    <div className="flex flex-col items-start gap-1 relative flex-1 grow min-w-0">
+      <section
+        className="relative flex w-full flex-[0_0_auto] flex-col items-start gap-4 self-stretch"
+        aria-label="Lista de projetos da empresa"
+      >
+        <div className="tabela-wrap w-full rounded-lg border border-solid border-slate-200 bg-white">
+          <table className="tabela-projetos w-full text-left">
+            <caption className="sr-only">
+              Relação de projetos de expansão óptica da empresa {session?.razao_social_empresa}
+            </caption>
+            <thead className="border-b border-solid border-slate-200 bg-slate-50">
+              <tr className="h-[52px]">
+                <th scope="col" className="w-12 px-4 py-2">
+                  <label htmlFor="select-all-projects" className="sr-only">
+                    Selecionar todos os projetos
+                  </label>
+                  <input
+                    id="select-all-projects"
+                    name="selectAllProjects"
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    aria-label="Selecionar todos os projetos"
+                    className="relative h-4 w-4 rounded border border-solid border-slate-300 accent-blue-600"
+                  />
+                </th>
+                {headerColumns.map((column) => (
+                  <th
+                    scope="col"
+                    key={column.label}
+                    className={`px-4 py-2 text-[10px] font-semibold leading-[15px] tracking-[0] text-slate-600 ${column.className}`}
+                  >
+                    {column.label === "Nome" ? (
                       <button
                         type="button"
-                        className="relative self-stretch mt-[-1.00px] text-left [font-family:'Inter-SemiBold',Helvetica] font-semibold text-slate-900 text-xs tracking-[0] leading-4 truncate"
-                        onClick={() => navigate(`/workspace?id_projeto=${project.id_projeto}`)}
+                        onClick={() => setSortAsc((prev) => !prev)}
+                        className="flex cursor-pointer items-center gap-2 border-0 bg-transparent p-0 text-left font-semibold text-slate-600"
+                        title="Ordenar por nome"
                       >
-                        {project.name}
+                        <span>{column.label}</span>
+                        <span className="relative h-3 w-3" aria-hidden="true">
+                          <img
+                            className={`absolute top-[13.75%] left-[13.75%] h-[86.25%] w-[86.25%] transition-transform ${sortAsc ? "" : "rotate-180"}`}
+                            alt=""
+                            src={image}
+                          />
+                        </span>
                       </button>
-                      <span className="relative self-stretch [font-family:'Inter-Regular',Helvetica] font-normal text-slate-600 text-[10px] tracking-[0] leading-[14px] truncate">
-                        {project.code} · {project.metragem_total.toFixed(0)} m
-                      </span>
-                    </div>
-                  </div>
-                  <span className="min-w-[120px] flex-1 text-xs text-slate-700">{project.status}</span>
-                  <span className="min-w-36 flex-1 truncate text-xs text-slate-700">{session.razao_social_empresa}</span>
-                  <span className="min-w-[104px] flex-1 text-xs text-slate-500">—</span>
-                  <span className="min-w-36 flex-1 text-xs text-slate-700">Expansão OSP</span>
-                  <div className="flex min-w-[156px] items-center gap-2 relative flex-1 grow">
-                    <div className="relative w-[15px] h-[15px]">
-                      <img
-                        className="absolute w-[93.17%] h-[97.34%] top-[2.66%] left-[6.83%]"
-                        alt=""
-                        src={calendarIcon}
-                      />
-                    </div>
-                    <div className="inline-flex flex-col items-start gap-1 relative flex-[0_0_auto]">
-                      <span className="relative w-fit mt-[-1.00px] [font-family:'Inter-Regular',Helvetica] font-normal text-slate-600 text-[11px] tracking-[0] leading-[14px] whitespace-nowrap">
-                        {project.custo_estimado.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                      </span>
-                      <span className="relative w-fit [font-family:'Inter-Regular',Helvetica] font-normal text-slate-900 text-[11px] tracking-[0] leading-[14px] whitespace-nowrap">
-                        {project.metragem_total.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} m
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex min-w-9 items-center gap-2 relative flex-1 grow">
-                    <button
-                      type="button"
-                      aria-label={`Ações de ${project.name}`}
-                      onClick={() => setActionProject(project)}
-                      className="p-0 bg-transparent border-0 cursor-pointer"
+                    ) : (
+                      <span>{column.label}</span>
+                    )}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={8} className="p-6 text-sm text-slate-600">
+                    Carregando projetos...
+                  </td>
+                </tr>
+              ) : error && projects.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="p-6 text-sm text-red-600" role="alert">
+                    {error}
+                  </td>
+                </tr>
+              ) : filteredProjects.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="p-6 text-sm text-slate-600">
+                    Nenhum projeto encontrado.
+                  </td>
+                </tr>
+              ) : (
+                paginatedProjects.map((project, index) => {
+                  const ActionIcon = project.artwork.action;
+                  const calendarIcon = calendarIcons[index % calendarIcons.length];
+                  const checkboxId = `select-project-${project.id_projeto}`;
+
+                  return (
+                    <tr
+                      key={project.id_projeto}
+                      className="h-14 border-b border-solid border-slate-200 bg-white hover:bg-slate-50/70"
                     >
-                      <ActionIcon className="!relative !w-8 !h-8" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                      <td className="px-4 py-2">
+                        <label htmlFor={checkboxId} className="sr-only">
+                          Selecionar {project.name}
+                        </label>
+                        <input
+                          id={checkboxId}
+                          name={checkboxId}
+                          type="checkbox"
+                          checked={selected.includes(project.code)}
+                          onChange={() => toggleProject(project.code)}
+                          aria-label={`Selecionar ${project.name}`}
+                          className="relative h-4 w-4 rounded border border-solid border-slate-300 accent-blue-600"
+                        />
+                      </td>
+                      <th scope="row" className="min-w-[172px] px-4 py-2 font-normal">
+                        <div className="flex items-center gap-2">
+                          <span className="relative h-[18px] w-[18px] shrink-0" aria-hidden="true">
+                            <img
+                              className="absolute top-[7.78%] left-[3.61%] h-[92.22%] w-[96.39%]"
+                              alt=""
+                              src={project.artwork.folder}
+                            />
+                          </span>
+                          <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
+                            <button
+                              type="button"
+                              className="max-w-full truncate text-left text-xs font-semibold leading-4 tracking-[0] text-slate-900 hover:text-blue-700 hover:underline"
+                              onClick={() => navigate(`/workspace?id_projeto=${project.id_projeto}`)}
+                            >
+                              {project.name}
+                            </button>
+                            <span className="max-w-full truncate text-[10px] font-normal leading-[14px] tracking-[0] text-slate-600">
+                              {project.code} · {project.metragem_total.toFixed(0)} m
+                            </span>
+                          </div>
+                        </div>
+                      </th>
+                      <td className="min-w-[120px] px-4 py-2 text-xs text-slate-700">
+                        {project.status}
+                      </td>
+                      <td className="min-w-36 truncate px-4 py-2 text-xs text-slate-700">
+                        {session.razao_social_empresa}
+                      </td>
+                      <td className="min-w-[104px] px-4 py-2 text-xs text-slate-500">
+                        —
+                      </td>
+                      <td className="min-w-36 px-4 py-2 text-xs text-slate-700">
+                        Expansão <abbr title="Outside Plant (Planta Externa)">OSP</abbr>
+                      </td>
+                      <td className="min-w-[156px] px-4 py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="relative h-[15px] w-[15px] shrink-0" aria-hidden="true">
+                            <img
+                              className="absolute top-[2.66%] left-[6.83%] h-[97.34%] w-[93.17%]"
+                              alt=""
+                              src={calendarIcon}
+                            />
+                          </span>
+                          <div className="inline-flex flex-col items-start gap-1">
+                            <span className="whitespace-nowrap text-[11px] font-normal leading-[14px] text-slate-600">
+                              {project.custo_estimado.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                            </span>
+                            <span className="whitespace-nowrap text-[11px] font-normal leading-[14px] text-slate-900">
+                              {project.metragem_total.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} m
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="min-w-9 px-4 py-2">
+                        <button
+                          type="button"
+                          aria-label={`Ações de ${project.name}`}
+                          onClick={() => setActionProject(project)}
+                          className="cursor-pointer border-0 bg-transparent p-0"
+                        >
+                          <ActionIcon className="!relative !h-8 !w-8" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+            <tfoot className="border-t border-solid border-slate-200 bg-slate-50">
+              <tr className="h-11">
+                <th
+                  scope="row"
+                  colSpan={6}
+                  className="px-4 py-2 text-xs font-semibold text-slate-700"
+                >
+                  Total acumulado (página atual)
+                </th>
+                <td className="px-4 py-2 text-xs font-semibold text-slate-900">
+                  {pageTotalCost.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} ·{" "}
+                  {pageTotalMeters.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} m
+                </td>
+                <td className="px-4 py-2" />
+              </tr>
+            </tfoot>
+          </table>
         </div>
-        <div className="flex h-14 items-center justify-between px-4 py-0 relative self-stretch w-full bg-white rounded-lg overflow-hidden border border-solid border-slate-200 shadow-[0px_4px_16px_#0f172a0d]">
-          <p className="relative w-fit [font-family:'Inter-Regular',Helvetica] font-normal text-slate-600 text-xs tracking-[0] leading-[normal]">
+
+        <div className="relative flex h-14 w-full flex-wrap items-center justify-between self-stretch overflow-hidden rounded-lg border border-solid border-slate-200 bg-white px-4 py-0 shadow-[0px_4px_16px_#0f172a0d]">
+          <p className="relative w-fit text-xs font-normal leading-[normal] tracking-[0] text-slate-600">
             Exibindo {paginatedProjects.length} de {filteredProjects.length} projetos
           </p>
           <nav
             aria-label="Paginação"
-            className="inline-flex items-center gap-1 relative flex-[0_0_auto]"
+            className="relative inline-flex flex-[0_0_auto] items-center"
           >
-            <button
-              type="button"
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-              aria-label="Página anterior"
-              className="relative w-3.5 h-3.5 bg-transparent border-0 p-0"
-            >
-              <img
-                className="absolute w-[71.09%] h-[81.07%] top-[18.93%] left-[28.91%]"
-                alt=""
-                src={default2}
-              />
-            </button>
-            <button
-              type="button"
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-              className="inline-flex min-w-8 h-8 items-center justify-center px-2.5 py-0 relative flex-[0_0_auto] bg-white rounded-md overflow-hidden"
-            >
-              <span className="[font-family:'Inter-Medium',Helvetica] font-medium text-slate-600 relative w-fit text-[11px] tracking-[0] leading-[normal] whitespace-nowrap">
-                Anterior
-              </span>
-            </button>
-            {Array.from({ length: totalPages }, (_, idx) => idx + 1).map((item) => (
-              <button
-                type="button"
-                key={item}
-                onClick={() => setPage(item)}
-                aria-current={safePage === item ? "page" : undefined}
-                className={`inline-flex min-w-8 h-8 items-center justify-center px-2.5 py-0 relative flex-[0_0_auto] rounded-md overflow-hidden ${
-                  safePage === item ? "bg-blue-600" : "bg-white"
-                }`}
-              >
-                <span
-                  className={`[font-family:'Inter-SemiBold',Helvetica] font-semibold relative w-fit text-[11px] tracking-[0] leading-[normal] whitespace-nowrap ${
-                    safePage === item ? "text-white" : "text-slate-600"
-                  }`}
+            <ul className="m-0 inline-flex list-none items-center gap-1 p-0">
+              <li>
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  aria-label="Página anterior"
+                  className="relative h-3.5 w-3.5 border-0 bg-transparent p-0"
                 >
-                  {item}
-                </span>
-              </button>
-            ))}
-
-            <button
-              type="button"
-              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-              className="inline-flex min-w-8 h-8 items-center justify-center px-2.5 py-0 relative flex-[0_0_auto] bg-white rounded-md overflow-hidden"
-            >
-              <span className="[font-family:'Inter-Medium',Helvetica] font-medium text-slate-600 relative w-fit text-[11px] tracking-[0] leading-[normal] whitespace-nowrap">
-                Próximo
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-              aria-label="Próxima página"
-              className="relative w-3.5 h-3.5 bg-transparent border-0 p-0"
-            >
-              <img
-                className="absolute w-[68.57%] h-[81.07%] top-[18.93%] left-[31.43%]"
-                alt=""
-                src={default3}
-              />
-            </button>
+                  <img
+                    className="absolute top-[18.93%] left-[28.91%] h-[81.07%] w-[71.09%]"
+                    alt=""
+                    src={default2}
+                  />
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  className="relative inline-flex h-8 min-w-8 flex-[0_0_auto] items-center justify-center overflow-hidden rounded-md bg-white px-2.5 py-0"
+                >
+                  <span className="relative w-fit whitespace-nowrap text-[11px] font-medium leading-[normal] tracking-[0] text-slate-600">
+                    Anterior
+                  </span>
+                </button>
+              </li>
+              {Array.from({ length: totalPages }, (_, idx) => idx + 1).map((item) => (
+                <li key={item}>
+                  <button
+                    type="button"
+                    onClick={() => setPage(item)}
+                    aria-current={safePage === item ? "page" : undefined}
+                    className={`relative inline-flex h-8 min-w-8 flex-[0_0_auto] items-center justify-center overflow-hidden rounded-md px-2.5 py-0 ${
+                      safePage === item ? "bg-blue-600" : "bg-white"
+                    }`}
+                  >
+                    <span
+                      className={`relative w-fit whitespace-nowrap text-[11px] font-semibold leading-[normal] tracking-[0] ${
+                        safePage === item ? "text-white" : "text-slate-600"
+                      }`}
+                    >
+                      {item}
+                    </span>
+                  </button>
+                </li>
+              ))}
+              <li>
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                  className="relative inline-flex h-8 min-w-8 flex-[0_0_auto] items-center justify-center overflow-hidden rounded-md bg-white px-2.5 py-0"
+                >
+                  <span className="relative w-fit whitespace-nowrap text-[11px] font-medium leading-[normal] tracking-[0] text-slate-600">
+                    Próximo
+                  </span>
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                  aria-label="Próxima página"
+                  className="relative h-3.5 w-3.5 border-0 bg-transparent p-0"
+                >
+                  <img
+                    className="absolute top-[18.93%] left-[31.43%] h-[81.07%] w-[68.57%]"
+                    alt=""
+                    src={default3}
+                  />
+                </button>
+              </li>
+            </ul>
           </nav>
         </div>
       </section>
-      <footer className="flex items-center justify-between relative self-stretch w-full flex-[0_0_auto]">
-        <p className="mt-[-1.00px] text-slate-600 relative w-fit [font-family:'Inter-Regular',Helvetica] font-normal text-[11px] tracking-[0] leading-[normal] whitespace-nowrap">
+      <footer className="relative flex w-full flex-[0_0_auto] flex-wrap items-center justify-between gap-2 self-stretch">
+        <small className="relative w-fit whitespace-nowrap text-[11px] font-normal leading-[normal] tracking-[0] text-slate-600">
           Dados demonstrativos · Não representam dados reais
-        </p>
-        <p className="mt-[-1.00px] text-slate-600 relative w-fit [font-family:'Inter-Regular',Helvetica] font-normal text-[11px] tracking-[0] leading-[normal] whitespace-nowrap">
-          InfraRoute / Engenharia de redes
-        </p>
+        </small>
+        <address className="relative w-fit whitespace-nowrap text-[11px] font-normal not-italic leading-[normal] tracking-[0] text-slate-600">
+          InfraRoute / Engenharia de redes ·{" "}
+          <a className="text-blue-700 hover:underline" href="mailto:engenharia@infraroute.com.br">
+            engenharia@infraroute.com.br
+          </a>
+        </address>
       </footer>
       {error && projects.length > 0 && (
         <p className="text-sm text-red-600" role="alert">{error}</p>
@@ -774,17 +880,28 @@ export const CurrentProjectsSection = () => {
             onSubmit={createProject}
           >
             <h2 className="text-xl font-semibold text-slate-900">Criar projeto</h2>
-            <label className="block space-y-2 text-sm font-medium text-slate-700">
-              Nome do projeto
+            <fieldset className="m-0 space-y-2 border-0 p-0">
+              <legend className="sr-only">Identificação do novo projeto</legend>
+              <label
+                htmlFor="new-project-name"
+                className="block text-sm font-medium text-slate-700"
+              >
+                Nome do projeto
+              </label>
               <input
+                id="new-project-name"
+                name="projectName"
+                type="text"
                 autoFocus
                 required
                 minLength={1}
+                maxLength={100}
+                placeholder="Ex.: Expansão FTTH Setor Norte"
                 value={projectName}
                 onChange={(event) => setProjectName(event.target.value)}
                 className="h-11 w-full rounded-lg border border-slate-300 px-3"
               />
-            </label>
+            </fieldset>
             {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
             <div className="flex justify-end gap-3">
               <button
@@ -799,7 +916,7 @@ export const CurrentProjectsSection = () => {
                 disabled={isCreating}
                 className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
               >
-                {isCreating ? "Criando..." : "Criar"}
+                {isCreating ? "Criando projeto..." : "Criar Projeto"}
               </button>
             </div>
           </form>

@@ -11,7 +11,7 @@ const navigationItems = [
   {
     label: "Dashboard",
     icon: default24,
-    alt: "Vector layout",
+    alt: "Ícone de painel Dashboard",
     iconClassName: "absolute w-[91.97%] h-[91.97%] top-[8.03%] left-[8.03%]",
     active: false,
   },
@@ -22,14 +22,14 @@ const navigationItems = [
   {
     label: "Ajuda",
     icon: default25,
-    alt: "Vector circle help",
+    alt: "Ícone de central de ajuda",
     iconClassName: "absolute w-[96.14%] h-[96.14%] top-[3.86%] left-[3.86%]",
     active: false,
   },
   {
     label: "Configurações",
     icon: default26,
-    alt: "Vector settings",
+    alt: "Ícone de configurações",
     iconClassName: "absolute w-[87.80%] h-[87.80%] top-[12.20%] left-[12.20%]",
     active: false,
   },
@@ -74,118 +74,127 @@ export const WorkspaceNavigationSidebarSection = () => {
 
   return (
     <aside
-      className="flex flex-col w-[260px] items-start justify-between pt-8 pb-6 px-4 relative self-stretch bg-slate-900"
+      className="relative flex w-full flex-col items-start justify-between self-stretch bg-slate-900 px-4 pt-8 pb-6 lg:w-[260px]"
       aria-label="Navegação do workspace"
     >
-      <div className="flex flex-col items-start gap-10 relative self-stretch w-full flex-[0_0_auto]">
-        <header className="flex flex-col items-start gap-3 px-3 py-0 relative self-stretch w-full flex-[0_0_auto]">
-          <div className="inline-flex items-center gap-2.5 relative flex-[0_0_auto]">
-            <div className="flex w-[26px] h-[26px] items-center justify-center relative">
+      <div className="relative flex w-full flex-[0_0_auto] flex-col items-start gap-10 self-stretch">
+        <header className="relative flex w-full flex-[0_0_auto] flex-col items-start gap-3 self-stretch px-3 py-0">
+          <div className="relative inline-flex flex-[0_0_auto] items-center gap-2.5">
+            <div className="relative flex h-[26px] w-[26px] items-center justify-center">
               <img
-                className="relative w-[22px] h-[22px]"
-                alt="Vector brand symbol"
+                className="relative h-[22px] w-[22px]"
+                alt="Logotipo da plataforma InfraRoute"
                 src={symbol}
               />
             </div>
-            <div className="relative w-fit mt-[-1.00px] [font-family:'Inter-Bold',Helvetica] font-bold text-slate-50 text-[25px] tracking-[-0.20px] leading-[normal] whitespace-nowrap">
+            <span className="relative mt-[-1.00px] w-fit whitespace-nowrap text-[25px] font-bold leading-[normal] tracking-[-0.20px] text-slate-50">
               InfraRoute
-            </div>
+            </span>
           </div>
-          <div className="inline-flex items-start px-2 py-[5px] relative flex-[0_0_auto] rounded overflow-hidden border border-solid border-slate-600">
-            <div className="relative w-fit mt-[-1.00px] [font-family:'Inter-SemiBold',Helvetica] font-semibold text-slate-300 text-[10px] tracking-[0] leading-[normal] whitespace-nowrap">
-              B2B Enterprise
-            </div>
+          <div className="relative inline-flex flex-[0_0_auto] items-start overflow-hidden rounded border border-solid border-slate-600 px-2 py-[5px]">
+            <span className="relative mt-[-1.00px] w-fit whitespace-nowrap text-[10px] font-semibold leading-[normal] tracking-[0] text-slate-300">
+              <abbr title="Business-to-Business">B2B</abbr> Enterprise
+            </span>
           </div>
         </header>
         <nav
-          className="flex flex-col items-start gap-2 relative self-stretch w-full flex-[0_0_auto]"
-          aria-label="Workspace"
+          className="relative flex w-full flex-[0_0_auto] flex-col items-start gap-2 self-stretch"
+          aria-label="Menu principal do workspace"
         >
-          <div className="self-stretch h-6 tracking-[0.14px] relative mt-[-1.00px] [font-family:'Inter-SemiBold',Helvetica] font-semibold text-slate-300 text-[10px] leading-[normal]">
+          <p className="relative mt-[-1.00px] h-6 self-stretch text-[10px] font-semibold leading-[normal] tracking-[0.14px] text-slate-300">
             WORKSPACE
-          </div>
-          {navigationItems.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              onClick={() => handleNavigation(item.label)}
-              aria-current={item.active ? "page" : undefined}
-              className={
-                item.active
-                  ? "flex h-12 items-center gap-3 px-3 py-0 relative self-stretch w-full bg-blue-100 rounded-lg overflow-hidden text-left appearance-none border-0"
-                  : "flex h-12 items-center gap-3 px-3 py-0 relative self-stretch w-full bg-slate-900 rounded-lg overflow-hidden text-left appearance-none border-0"
-              }
-            >
-              {item.active && (
-                <span
-                  className="absolute top-3 left-0 w-[3px] h-6 bg-blue-600 rounded-sm"
-                  aria-hidden="true"
-                />
-              )}
-              {renderNavigationIcon(item)}
-              <span
-                className={
-                  item.active
-                    ? "[font-family:'Inter-SemiBold',Helvetica] font-semibold text-blue-700 relative w-fit text-[13px] tracking-[0] leading-[normal]"
-                    : item.label === "Projetos"
-                      ? "[font-family:'Inter-SemiBold',Helvetica] font-semibold text-slate-300 relative w-fit text-[13px] tracking-[0] leading-[normal]"
-                      : "[font-family:'Inter-Regular',Helvetica] font-normal text-slate-300 relative w-fit text-[13px] tracking-[0] leading-[normal]"
-                }
-              >
-                {item.label}
-              </span>
-            </button>
-          ))}
+          </p>
+          <ul className="m-0 flex w-full list-none flex-col items-start gap-2 p-0">
+            {navigationItems.map((item) => (
+              <li key={item.label} className="w-full">
+                <button
+                  type="button"
+                  onClick={() => handleNavigation(item.label)}
+                  aria-current={item.active ? "page" : undefined}
+                  className={
+                    item.active
+                      ? "relative flex h-12 w-full appearance-none items-center gap-3 self-stretch overflow-hidden rounded-lg border-0 bg-blue-100 px-3 py-0 text-left"
+                      : "relative flex h-12 w-full appearance-none items-center gap-3 self-stretch overflow-hidden rounded-lg border-0 bg-slate-900 px-3 py-0 text-left hover:bg-slate-800"
+                  }
+                >
+                  {item.active && (
+                    <span
+                      className="absolute top-3 left-0 h-6 w-[3px] rounded-sm bg-blue-600"
+                      aria-hidden="true"
+                    />
+                  )}
+                  {renderNavigationIcon(item)}
+                  <span
+                    className={
+                      item.active
+                        ? "relative w-fit text-[13px] font-semibold leading-[normal] tracking-[0] text-blue-700"
+                        : item.label === "Projetos"
+                          ? "relative w-fit text-[13px] font-semibold leading-[normal] tracking-[0] text-slate-300"
+                          : "relative w-fit text-[13px] font-normal leading-[normal] tracking-[0] text-slate-300"
+                    }
+                  >
+                    {item.label}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
         </nav>
       </div>
-      <div className="flex flex-col items-start gap-6 relative self-stretch w-full flex-[0_0_auto]">
+      <div className="relative mt-6 flex w-full flex-[0_0_auto] flex-col items-start gap-6 self-stretch lg:mt-0">
         <section
-          className="flex flex-col items-start gap-2 p-3 relative self-stretch w-full flex-[0_0_auto]"
+          className="relative flex w-full flex-[0_0_auto] flex-col items-start gap-2 self-stretch p-3"
           aria-labelledby="demo-environment-title"
         >
           <h2
             id="demo-environment-title"
-            className="w-fit tracking-[0.11px] whitespace-nowrap relative mt-[-1.00px] [font-family:'Inter-SemiBold',Helvetica] font-semibold text-slate-300 text-[10px] leading-[normal]"
+            className="relative mt-[-1.00px] w-fit whitespace-nowrap text-[10px] font-semibold leading-[normal] tracking-[0.11px] text-slate-300"
           >
             AMBIENTE DE DEMONSTRAÇÃO
           </h2>
-          <p className="relative self-stretch [font-family:'Inter-Regular',Helvetica] font-normal text-slate-300 text-xs tracking-[0] leading-[19px]">
-            Planejamento OSP e expansão de redes ópticas.
+          <p className="relative self-stretch text-xs font-normal leading-[19px] tracking-[0] text-slate-300">
+            Planejamento <abbr title="Outside Plant (Planta Externa)">OSP</abbr> e expansão de redes ópticas.
           </p>
         </section>
         <section
-          className="flex flex-col items-start gap-3.5 pt-6 pb-0 px-2 relative self-stretch w-full flex-[0_0_auto] border-t [border-top-style:solid] border-slate-600"
+          className="relative flex w-full flex-[0_0_auto] flex-col items-start gap-3.5 self-stretch border-t border-solid border-slate-600 px-2 pt-6 pb-0"
           aria-label="Perfil do usuário"
         >
-          <div className="flex items-center gap-2.5 relative self-stretch w-full flex-[0_0_auto]">
+          <div className="relative flex w-full flex-[0_0_auto] items-center gap-2.5 self-stretch">
             <div
-              className="flex w-9 h-9 items-center justify-center relative bg-slate-600 rounded-[18px] overflow-hidden"
+              className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-[18px] bg-slate-600"
               aria-hidden="true"
             >
-              <div className="relative w-fit [font-family:'Inter-SemiBold',Helvetica] font-semibold text-slate-50 text-xs tracking-[0] leading-[normal]">
+              <span className="relative w-fit text-xs font-semibold leading-[normal] tracking-[0] text-slate-50">
                 {userInitials}
-              </div>
+              </span>
             </div>
-            <div className="flex flex-col items-start gap-1 relative flex-1 grow">
-              <div className="relative w-fit mt-[-1.00px] [font-family:'Inter-SemiBold',Helvetica] font-semibold text-slate-50 text-[13px] tracking-[0] leading-[normal]">
+            <div className="relative flex flex-1 grow flex-col items-start gap-1">
+              <strong className="relative mt-[-1.00px] w-fit text-[13px] font-semibold leading-[normal] tracking-[0] text-slate-50">
                 {session.nome}
-              </div>
-              <div className="text-slate-300 relative w-fit [font-family:'Inter-Regular',Helvetica] font-normal text-[11px] tracking-[0] leading-[normal] whitespace-nowrap">
+              </strong>
+              <span className="relative w-fit whitespace-nowrap text-[11px] font-normal leading-[normal] tracking-[0] text-slate-300">
                 {session.nivel_acesso}
-              </div>
+              </span>
             </div>
           </div>
-          <div className="inline-flex items-center gap-1.5 relative flex-[0_0_auto]">
-            <span className="relative w-[15px] h-[15px]" aria-hidden="true">
+          <div className="relative inline-flex flex-[0_0_auto] items-center gap-1.5">
+            <span className="relative h-[15px] w-[15px]" aria-hidden="true">
               <img
-                className="absolute w-[97.38%] h-[97.32%] top-[2.68%] left-[2.62%]"
-                alt="Vector badge check"
+                className="absolute top-[2.68%] left-[2.62%] h-[97.32%] w-[97.38%]"
+                alt="Selo de registro profissional CREA"
                 src={default27}
               />
             </span>
-            <div className="text-slate-300 relative w-fit [font-family:'Inter-Regular',Helvetica] font-normal text-[11px] tracking-[0] leading-[normal] whitespace-nowrap">
-              {session.crea ? `CREA ${session.crea}` : "Sem CREA cadastrado"}
-            </div>
+            <span className="relative w-fit whitespace-nowrap text-[11px] font-normal leading-[normal] tracking-[0] text-slate-300">
+              {session.crea ? (
+                <>
+                  <abbr title="Conselho Regional de Engenharia e Agronomia">CREA</abbr> {session.crea}
+                </>
+              ) : (
+                "Sem CREA cadastrado"
+              )}
+            </span>
           </div>
           <button
             type="button"

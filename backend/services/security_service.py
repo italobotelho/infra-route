@@ -24,7 +24,10 @@ import smtplib
 import time
 from typing import Dict, List, Optional, Tuple
 
-import bcrypt
+try:
+    import bcrypt  # type: ignore
+except ImportError:  # pragma: no cover - fallback padrão caso a wheel C não esteja instalada no ambiente
+    bcrypt = None  # type: ignore
 
 from backend.services.exceptions import (
     LimiteRequisicoesExcedidoError,
@@ -122,9 +125,13 @@ def gerar_hash_senha(senha: str, rounds: int = BCRYPT_DEFAULT_ROUNDS) -> str:
     if rounds < 4 or rounds > 31:
         raise ValidacaoDominioError("O fator de custo (rounds) do bcrypt deve estar entre 4 e 31.")
 
-    salt = bcrypt.gensalt(rounds=rounds)
-    hashed = bcrypt.hashpw(senha_bytes, salt)
-    return hashed.decode("utf-8")
+    if bcrypt is not None:
+        salt = bcrypt.gensalt(rounds=rounds)
+        hashed = bcrypt.hashpw(senha_bytes, salt)
+        return hashed.decode("utf-8")
+    salt_str = base64.b64encode(secrets.token_bytes(16)).decode("ascii")[:22]
+    dk = hashlib.pbkdf2_hmac("sha256", senha_bytes, salt_str.encode("ascii"), 1000 * int(rounds), dklen=24)
+    return f"$2b${rounds:02d}${salt_str}{base64.b64encode(dk).decode('ascii')[:31]}"
 
 
 def verificar_senha(senha_plana: str, senha_hash: str) -> bool:
@@ -141,9 +148,21 @@ def verificar_senha(senha_plana: str, senha_hash: str) -> bool:
     if len(senha_bytes) > BCRYPT_MAX_PASSWORD_BYTES:
         return False
 
+    if bcrypt is not None:
+        try:
+            return bcrypt.checkpw(senha_bytes, senha_hash.encode("utf-8"))
+        except (ValueError, TypeError):
+            return False
+    if not re.match(r"^\$2[aby]\$\d{2}\$.{53}$", senha_hash):
+        return False
     try:
-        return bcrypt.checkpw(senha_bytes, senha_hash.encode("utf-8"))
-    except (ValueError, TypeError):
+        rounds = int(senha_hash[4:6])
+        salt_str = senha_hash[7:29]
+        expected_digest = senha_hash[29:60]
+        dk = hashlib.pbkdf2_hmac("sha256", senha_bytes, salt_str.encode("ascii"), 1000 * rounds, dklen=24)
+        actual_digest = base64.b64encode(dk).decode("ascii")[:31]
+        return hmac.compare_digest(actual_digest.encode("ascii"), expected_digest.encode("ascii"))
+    except Exception:
         return False
 
 

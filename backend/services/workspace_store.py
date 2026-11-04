@@ -520,7 +520,9 @@ class WorkspaceStoreService:
                 email_usuario=email_norm,
                 detalhes=f"Tentativa com e-mail inexistente ({tentativas}/{self.limitador_login.max_tentativas}).",
             )
-            raise ViolacaoMultiTenantError("Credenciais corporativas inválidas.")
+            raise ViolacaoMultiTenantError(
+                "Senha incorreta ou e-mail não cadastrado, tente novamente."
+            )
 
         senha_hash_cadastrada = self._senhas_usuarios.get(usuario_encontrado.id_usuario)
         if not senha_hash_cadastrada or not verificar_senha(senha, senha_hash_cadastrada):
@@ -531,7 +533,9 @@ class WorkspaceStoreService:
                 email_usuario=email_norm,
                 detalhes=f"Senha incorreta ({tentativas}/{self.limitador_login.max_tentativas}).",
             )
-            raise ViolacaoMultiTenantError("Credenciais corporativas inválidas.")
+            raise ViolacaoMultiTenantError(
+                "Senha incorreta ou e-mail não cadastrado, tente novamente."
+            )
 
         self.limitador_login.resetar(email_norm)
         sessao = self._construir_sessao_usuario(usuario_encontrado)

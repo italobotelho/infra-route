@@ -70,6 +70,10 @@
   @apply pointer-events-auto absolute top-4 left-[calc(50.00%_-_123px)] inline-flex items-center gap-1 overflow-hidden rounded-[18px] border border-solid border-slate-700 bg-slate-900 p-2 shadow-[0px_8px_32px_#02061754] backdrop-blur-[10px];
 }
 
+.toolbar__list {
+  @apply m-0 inline-flex list-none items-center gap-1 p-0;
+}
+
 .tool-hint {
   font-family: var(--font-regular);
   @apply absolute top-[100px] left-[calc(50.00%_-_123px)] rounded-full border border-solid border-slate-700 bg-slate-900 px-3 py-1.5 text-[10px] leading-4 text-slate-300;
@@ -168,7 +172,23 @@
 }
 
 .scale-bar__line {
-  @apply relative h-[5px] border-b border-l border-r border-solid border-[#bac6d2];
+  @apply relative h-[5px] w-14 border-b border-l border-r border-solid border-[#bac6d2];
+}
+
+.scale-bar__line--sm {
+  @apply w-12;
+}
+
+.scale-bar__line--md {
+  @apply w-16;
+}
+
+.scale-bar__line--lg {
+  @apply w-20;
+}
+
+.scale-bar__line--xl {
+  @apply w-24;
 }
 
 .scale-bar__label {
@@ -305,7 +325,7 @@
 }
 
 .layer-list {
-  @apply flex w-full flex-col items-start;
+  @apply m-0 flex w-full list-none flex-col items-start p-0;
 }
 
 .panel-note {
@@ -394,7 +414,7 @@
 /* Página */
 
 .workspace {
-  @apply relative min-h-[900px] w-full min-w-[1440px] overflow-hidden bg-slate-950;
+  @apply relative min-h-screen w-full overflow-hidden bg-slate-950;
 }
 
 .workspace__overlay {
