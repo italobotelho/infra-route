@@ -47,7 +47,7 @@ Provedores regionais de internet (**ISPs**) e escritórios de engenharia de tele
 1. **Levantamento de Requisitos:** Especificação das regras de negócio de engenharia óptica, restrições de vão máximo por modelo de cabo (`AS-80`, `AS-120`, `AS-200`) e governança multi-tenant (documentados em `/docs`).
 2. **Análise e Design:** Modelagem Conceitual, Lógica e Física em **3ª Forma Normal (3FN)** com extensão geoespacial **PostGIS** (`SRID 4326`) e prototipação **UI/UX** de alta fidelidade.
 3. **Implementação:** Desenvolvimento desacoplado em camadas (Frontend React/Vite + Backend Python FastAPI).
-4. **Testes e Verificação:** Suíte automatizada com **42 testes unitários e de integração** (`backend/tests/`) cobrindo segurança, governança, algoritmo de Prim e fluxo completo do workspace.
+4. **Testes e Verificação:** Suíte automatizada com **47 testes unitários e de integração** (`backend/tests/`) cobrindo segurança, governança multi-tenant, algoritmo de Prim, logs em tempo real, fluxo completo do workspace e persistência SQL.
 5. **Implantação e Evolução Contínua:** Build otimizado de produção (`vite build`) e migrações SQL versionadas (`database/`).
 
 ### 2.2 Metodologia Ágil Adotada: Scrumban (Scrum + Kanban)
@@ -167,9 +167,11 @@ infra-route/
 ├── backend/                           # API Backend em Python (FastAPI)
 │   ├── controllers/                   # Controladores REST (auth, projetos, topologia)
 │   ├── models/                        # Contratos e validações Pydantic (schemas.py)
+│   ├── repositories/                  # Repositório SQL sobre DatabaseManagerBase
 │   ├── services/                      # Regras de negócio (prim, governanca, security, store)
-│   ├── tests/                         # Suíte com 42 testes automatizados (unittest)
+│   ├── tests/                         # Suíte com 47 testes automatizados (unittest)
 │   ├── database.py                    # Conexão SQLAlchemy / PostGIS
+│   ├── database_manager.py            # Camada POO DB-API (PostgresDatabaseManager / fallback SQLite)
 │   ├── main.py                        # Ponto de entrada FastAPI + middlewares OWASP
 │   └── requirements.txt               # Dependências Python
 ├── database/                          # Scripts de Banco de Dados Relacional / Geoespacial
@@ -243,7 +245,7 @@ Requisitos: **Node.js 20.19+** (ou **22.12+**) e **Python 3.10+**.
 
 > **Nota para Windows PowerShell:** Caso a política de execução (`ExecutionPolicy`) bloqueie o comando `npm`, utilize `npm.cmd` (ex.: `npm.cmd install`, `npm.cmd run dev`, `npm.cmd run build`).
 
-### 7.1 Executar a Suíte de Testes Automatizados (42 testes)
+### 7.1 Executar a Suíte de Testes Automatizados (47 testes)
 ```powershell
 python -m unittest discover -s backend/tests -v
 ```
@@ -270,9 +272,12 @@ Copie `.env.example` para `.env.local` na raiz do projeto e informe sua chave da
 VITE_GOOGLE_MAPS_API_KEY=SUA_CHAVE_AQUI
 ```
 
-### 7.5 Credenciais de Demonstração
-- **Login Rápido (1 clique na tela `/login`):** `engenheiro@empresa.com.br` / senha `123456`
-- **Persistência em Desenvolvimento:** Novos cadastros, projetos criados, alterações de status e ativos desenhados no mapa são salvos automaticamente em `.cache/dev_users.json` e `.cache/dev_workspace.json`, sobrevivendo ao reinício do servidor.
+### 7.5 Credenciais e Perfis de Demonstração (senha padrão: `123456`)
+- **Engenheiro Admin (Empresa 1 — Acesso Total + Catálogos 3FN):** `engenheiro@empresa.com.br`
+- **Eng. Marina Alves (Empresa 1 — Papel `Projetista`):** `projetista@empresa.com.br`
+- **Analista Visualizador (Empresa 1 — Somente Leitura / Auditoria):** `auditor@empresa.com.br`
+- **Gestor ConectaSul (Empresa 2 — Teste de Isolamento Multi-Tenant):** `gestor@conectasul.com.br`
+- **Sessão Isolada por Aba + Logs Ao Vivo:** Cada aba mantém sua sessão JWT isolada ao alternar o perfil no seletor rápido (`QuickPersonaSwitcher`), permitindo operar o mapa em uma aba e acompanhar `Log_Auditoria` chegando em tempo real (`/governanca` ou gaveta **Logs Ao Vivo**) em outra.
 
 ---
 
@@ -288,8 +293,10 @@ VITE_GOOGLE_MAPS_API_KEY=SUA_CHAVE_AQUI
 | `POST` | `/api/auth/reenviar-codigo` | Gera e envia um novo código OTP de 6 dígitos para verificação de e-mail. |
 | `GET` | `/api/auth/auditoria` | Lista a trilha de auditoria de segurança e governança. |
 | `GET` | `/api/catalogos` | Lista os catálogos em 3FN (`Tipo_Equipamento` e `Tipo_Cabo`). |
+| `GET` | `/api/health/db` | Verifica a conexão SQL ativa e retorna a contagem real das tabelas e `vw_resumo_projetos_corporativos`. |
 | `GET` | `/api/projetos` | Lista os projetos da empresa ativa com `metragem_total` e `custo_estimado` memoizados. |
 | `POST` | `/api/projetos` | Cria novo projeto validando Triângulo Multi-Tenant, CREA e RBAC. |
+| `PATCH` | `/api/projetos/{id_projeto}` | Renomeia um projeto ativo respeitando Multi-Tenant, RBAC e trava de imutabilidade. |
 | `PATCH` | `/api/projetos/{id_projeto}/status` | Atualiza o status do projeto (`Em Planejamento`, `Em Execução`, `Concluído`, `Cancelado`). |
 | `GET` | `/api/projetos/{id_projeto}` | Retorna o projeto detalhado, seus `pontos` (`Ponto_Rede`) e `trechos` (`Trecho_Rede`). |
 | `POST` | `/api/projetos/{id_projeto}/pontos` | Registra um novo `Ponto_Rede` (`Poste`, `CTO`, `CEO`, `OLT`) no projeto. |
@@ -302,11 +309,17 @@ VITE_GOOGLE_MAPS_API_KEY=SUA_CHAVE_AQUI
 
 ## 9. Equipe, Banco de Dados e Licença
 
-### 9.1 Inicialização do Banco Físico (PostgreSQL + PostGIS)
-```powershell
-psql -U postgres -d infraroute -f database/schema_postgis.sql
-psql -U postgres -d infraroute -f database/seed.sql
-```
+### 9.1 Banco de Dados Oficial (PostgreSQL + PostGIS) e Fallback Local (SQLite)
+O backend utiliza a arquitetura POO `DatabaseManagerBase` ([`backend/database_manager.py`](backend/database_manager.py)) conectada ao repositório SQL [`backend/repositories/sql_repository.py`](backend/repositories/sql_repository.py):
+- **Banco Oficial — PostgreSQL + PostGIS (`DB_ENGINE=postgresql` no `.env`):** Aplique o schema espacial e os dados iniciais em seu servidor PostgreSQL:
+  ```powershell
+  psql -U postgres -d infraroute -f database/schema_postgis.sql
+  psql -U postgres -d infraroute -f database/seed.sql
+  ```
+- **Fallback Local Imediato (`DB_ENGINE=sqlite` no `.env`):** Quando não houver daemon PostgreSQL ativo na máquina, cria e persiste automaticamente todas as tabelas em `.cache/infraroute.db` com chaves estrangeiras (`PRAGMA foreign_keys = ON`) e restrições `CHECK` ativas.
+
+### 9.2 Documentação da 4ª Entrega
+Consulte o relatório completo consolidado em [`docs/Entrega_04_Documento_Padrao_InfraRoute.md`](docs/Entrega_04_Documento_Padrao_InfraRoute.md).
 
 ### 9.2 Integrantes do Projeto Integrador (PUC)
 - Equipe de Engenharia de Software e Telecomunicações — Projeto Integrador **InfraRoute** (PUC Campinas).
