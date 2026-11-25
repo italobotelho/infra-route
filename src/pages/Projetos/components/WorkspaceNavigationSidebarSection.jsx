@@ -1,60 +1,64 @@
-import { useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { getSession, logoutSession } from "../../../lib/api";
-import { Default } from "./icons/Default";
-import default24 from "../assets/default-24.svg";
-import default25 from "../assets/default-25.svg";
-import default26 from "../assets/default-26.svg";
+import { LiveAuditDrawer } from "../../../components/LiveAuditDrawer";
+import { QuickPersonaSwitcher } from "../../../components/QuickPersonaSwitcher";
+import { useToast } from "../../../components/ToastProvider";
 import default27 from "../assets/default-27.svg";
 import symbol from "../assets/symbol.svg";
 
 const navigationItems = [
-  {
-    label: "Dashboard",
-    icon: default24,
-    alt: "Ícone de painel Dashboard",
-    iconClassName: "absolute w-[91.97%] h-[91.97%] top-[8.03%] left-[8.03%]",
-    active: false,
-  },
-  {
-    label: "Projetos",
-    active: true,
-  },
-  {
-    label: "Ajuda",
-    icon: default25,
-    alt: "Ícone de central de ajuda",
-    iconClassName: "absolute w-[96.14%] h-[96.14%] top-[3.86%] left-[3.86%]",
-    active: false,
-  },
-  {
-    label: "Configurações",
-    icon: default26,
-    alt: "Ícone de configurações",
-    iconClassName: "absolute w-[87.80%] h-[87.80%] top-[12.20%] left-[12.20%]",
-    active: false,
-  },
+  { label: "Dashboard", path: "/dashboard", icon: "dashboard" },
+  { label: "Projetos", path: "/projetos", icon: "projects" },
+  { label: "Governança & SQL", path: "/governanca", icon: "governance" },
+  { label: "Central de Ajuda", path: "/ajuda", icon: "help" },
 ];
 
-const renderNavigationIcon = (item) => {
-  if (item.label === "Projetos") {
-    return (
-      <Default
-        className="!relative !w-5 !h-5"
-        color={item.active ? "#1D4ED8" : "#CBD5E1"}
-      />
-    );
+function SidebarNavIcon({ icon, active }) {
+  const colorClass = active ? "text-blue-700" : "text-slate-300";
+  switch (icon) {
+    case "dashboard":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={`h-5 w-5 shrink-0 ${colorClass}`} aria-hidden="true">
+          <rect x="3" y="3" width="7" height="9" rx="1.5" />
+          <rect x="14" y="3" width="7" height="5" rx="1.5" />
+          <rect x="14" y="12" width="7" height="9" rx="1.5" />
+          <rect x="3" y="16" width="7" height="5" rx="1.5" />
+        </svg>
+      );
+    case "projects":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={`h-5 w-5 shrink-0 ${colorClass}`} aria-hidden="true">
+          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+        </svg>
+      );
+    case "governance":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={`h-5 w-5 shrink-0 ${colorClass}`} aria-hidden="true">
+          <path d="M12 3l7 4v5c0 4.5-3 8.2-7 9-4-.8-7-4.5-7-9V7l7-4z" />
+          <path d="M9.5 12l1.8 1.8 3.5-3.8" />
+        </svg>
+      );
+    case "help":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={`h-5 w-5 shrink-0 ${colorClass}`} aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.5-2.5 2-2.5 3.5" />
+          <path d="M12 16.5h.01" />
+        </svg>
+      );
+    default:
+      return null;
   }
-
-  return (
-    <span className="relative w-[19px] h-[19px]" aria-hidden="true">
-      <img className={item.iconClassName} alt={item.alt} src={item.icon} />
-    </span>
-  );
-};
+}
 
 export const WorkspaceNavigationSidebarSection = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { showToast } = useToast();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const session = getSession();
+
   const userInitials = (session?.nome || "IR")
     .trim()
     .split(/\s+/)
@@ -63,148 +67,199 @@ export const WorkspaceNavigationSidebarSection = () => {
     .map((part) => part[0].toUpperCase())
     .join("") || "IR";
 
-  const handleNavigation = (label) => {
-    if (label === "Projetos") navigate("/projetos");
+  const handleNavigation = (path) => {
+    setMobileMenuOpen(false);
+    navigate(path);
   };
 
   const handleLogout = async () => {
     await logoutSession();
+    showToast("Sessão encerrada com segurança.", { type: "info" });
     navigate("/login", { replace: true });
   };
 
   return (
     <aside
-      className="relative flex w-full flex-col items-start justify-between self-stretch bg-slate-900 px-4 pt-8 pb-6 lg:w-[260px]"
+      className="no-print relative flex w-full shrink-0 flex-col items-start justify-between self-stretch bg-slate-900 px-4 pt-5 pb-5 lg:min-h-screen lg:w-[260px] lg:pt-8 lg:pb-6"
       aria-label="Navegação do workspace"
     >
-      <div className="relative flex w-full flex-[0_0_auto] flex-col items-start gap-10 self-stretch">
-        <header className="relative flex w-full flex-[0_0_auto] flex-col items-start gap-3 self-stretch px-3 py-0">
-          <div className="relative inline-flex flex-[0_0_auto] items-center gap-2.5">
-            <div className="relative flex h-[26px] w-[26px] items-center justify-center">
-              <img
-                className="relative h-[22px] w-[22px]"
-                alt="Logotipo da plataforma InfraRoute"
-                src={symbol}
-              />
+      <div className="relative flex w-full flex-col items-start gap-6 lg:gap-10">
+        <header className="relative flex w-full items-center justify-between px-2 lg:flex-col lg:items-start lg:gap-3 lg:px-3">
+          <div className="flex flex-col items-start gap-2">
+            <div className="inline-flex items-center gap-2.5">
+              <div className="flex h-[26px] w-[26px] items-center justify-center">
+                <img
+                  className="h-[22px] w-[22px]"
+                  alt="Logotipo da plataforma InfraRoute"
+                  src={symbol}
+                />
+              </div>
+              <span className="whitespace-nowrap text-[22px] font-bold tracking-[-0.20px] text-slate-50 lg:text-[25px]">
+                InfraRoute
+              </span>
             </div>
-            <span className="relative mt-[-1.00px] w-fit whitespace-nowrap text-[25px] font-bold leading-[normal] tracking-[-0.20px] text-slate-50">
-              InfraRoute
-            </span>
+            <div className="hidden items-start overflow-hidden rounded border border-solid border-slate-600 px-2 py-[4px] lg:inline-flex">
+              <span className="whitespace-nowrap text-[10px] font-semibold text-slate-300">
+                <abbr title="Business-to-Business">B2B</abbr> Enterprise ·{" "}
+                {session?.razao_social_empresa ? "Multi-Tenant" : "OSP"}
+              </span>
+            </div>
           </div>
-          <div className="relative inline-flex flex-[0_0_auto] items-start overflow-hidden rounded border border-solid border-slate-600 px-2 py-[5px]">
-            <span className="relative mt-[-1.00px] w-fit whitespace-nowrap text-[10px] font-semibold leading-[normal] tracking-[0] text-slate-300">
-              <abbr title="Business-to-Business">B2B</abbr> Enterprise
-            </span>
-          </div>
+
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="sidebar-menu-content"
+            aria-label={mobileMenuOpen ? "Recolher menu de navegação" : "Abrir menu de navegação"}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700 lg:hidden"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden="true">
+              {mobileMenuOpen ? (
+                <path d="M6 6l12 12M18 6L6 18" />
+              ) : (
+                <path d="M4 7h16M4 12h16M4 17h16" />
+              )}
+            </svg>
+          </button>
         </header>
-        <nav
-          className="relative flex w-full flex-[0_0_auto] flex-col items-start gap-2 self-stretch"
-          aria-label="Menu principal do workspace"
+
+        <div
+          id="sidebar-menu-content"
+          className={`${mobileMenuOpen ? "flex" : "hidden"} w-full flex-col gap-6 lg:flex`}
         >
-          <p className="relative mt-[-1.00px] h-6 self-stretch text-[10px] font-semibold leading-[normal] tracking-[0.14px] text-slate-300">
-            WORKSPACE
-          </p>
-          <ul className="m-0 flex w-full list-none flex-col items-start gap-2 p-0">
-            {navigationItems.map((item) => (
-              <li key={item.label} className="w-full">
-                <button
-                  type="button"
-                  onClick={() => handleNavigation(item.label)}
-                  aria-current={item.active ? "page" : undefined}
-                  className={
-                    item.active
-                      ? "relative flex h-12 w-full appearance-none items-center gap-3 self-stretch overflow-hidden rounded-lg border-0 bg-blue-100 px-3 py-0 text-left"
-                      : "relative flex h-12 w-full appearance-none items-center gap-3 self-stretch overflow-hidden rounded-lg border-0 bg-slate-900 px-3 py-0 text-left hover:bg-slate-800"
-                  }
-                >
-                  {item.active && (
-                    <span
-                      className="absolute top-3 left-0 h-6 w-[3px] rounded-sm bg-blue-600"
-                      aria-hidden="true"
-                    />
-                  )}
-                  {renderNavigationIcon(item)}
-                  <span
-                    className={
-                      item.active
-                        ? "relative w-fit text-[13px] font-semibold leading-[normal] tracking-[0] text-blue-700"
-                        : item.label === "Projetos"
-                          ? "relative w-fit text-[13px] font-semibold leading-[normal] tracking-[0] text-slate-300"
-                          : "relative w-fit text-[13px] font-normal leading-[normal] tracking-[0] text-slate-300"
-                    }
-                  >
-                    {item.label}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
+          <nav
+            className="relative flex w-full flex-col items-start gap-2"
+            aria-label="Menu principal do workspace"
+          >
+            <p className="px-3 text-[10px] font-semibold tracking-[0.14px] text-slate-400">
+              NAVEGAÇÃO
+            </p>
+            <ul className="m-0 flex w-full list-none flex-col items-start gap-1.5 p-0">
+              {navigationItems.map((item) => {
+                const active = location.pathname === item.path;
+                return (
+                  <li key={item.path} className="w-full">
+                    <button
+                      type="button"
+                      onClick={() => handleNavigation(item.path)}
+                      aria-current={active ? "page" : undefined}
+                      className={
+                        active
+                          ? "relative flex h-11 w-full cursor-pointer items-center gap-3 overflow-hidden rounded-lg border-0 bg-blue-100 px-3 text-left transition"
+                          : "relative flex h-11 w-full cursor-pointer items-center gap-3 overflow-hidden rounded-lg border-0 bg-slate-900 px-3 text-left transition hover:bg-slate-800"
+                      }
+                    >
+                      {active && (
+                        <span
+                          className="absolute top-2.5 left-0 h-6 w-[3px] rounded-sm bg-blue-600"
+                          aria-hidden="true"
+                        />
+                      )}
+                      <SidebarNavIcon icon={item.icon} active={active} />
+                      <span
+                        className={
+                          active
+                            ? "text-[13px] font-semibold text-blue-700"
+                            : "text-[13px] font-medium text-slate-300"
+                        }
+                      >
+                        {item.label}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+
+          <div className="flex w-full flex-col gap-5 border-t border-slate-800 pt-5 lg:hidden">
+            <div className="flex items-center justify-between px-2">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-700 text-xs font-semibold text-white">
+                  {userInitials}
+                </div>
+                <div className="flex flex-col">
+                  <strong className="text-xs font-semibold text-slate-100">{session?.nome}</strong>
+                  <span className="text-[11px] text-slate-400">{session?.nivel_acesso}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-200 hover:bg-slate-800"
+              >
+                Sair
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="relative mt-6 flex w-full flex-[0_0_auto] flex-col items-start gap-6 self-stretch lg:mt-0">
+
+      <div className="relative mt-6 hidden w-full flex-col items-start gap-4 lg:flex">
+        <QuickPersonaSwitcher variant="sidebar" />
+
         <section
-          className="relative flex w-full flex-[0_0_auto] flex-col items-start gap-2 self-stretch p-3"
-          aria-labelledby="demo-environment-title"
+          className="flex w-full flex-col items-start gap-1.5 rounded-xl border border-slate-800 bg-slate-950/50 p-3"
+          aria-labelledby="tenant-card-title"
         >
           <h2
-            id="demo-environment-title"
-            className="relative mt-[-1.00px] w-fit whitespace-nowrap text-[10px] font-semibold leading-[normal] tracking-[0.11px] text-slate-300"
+            id="tenant-card-title"
+            className="text-[10px] font-semibold tracking-[0.11px] text-slate-400"
           >
-            AMBIENTE DE DEMONSTRAÇÃO
+            EMPRESA ATIVA
           </h2>
-          <p className="relative self-stretch text-xs font-normal leading-[19px] tracking-[0] text-slate-300">
-            Planejamento <abbr title="Outside Plant (Planta Externa)">OSP</abbr> e expansão de redes ópticas.
+          <p className="m-0 text-xs font-medium leading-5 text-slate-200">
+            {session?.razao_social_empresa || "InfraTelecom Engenharia Óptica S.A."}
           </p>
         </section>
+
         <section
-          className="relative flex w-full flex-[0_0_auto] flex-col items-start gap-3.5 self-stretch border-t border-solid border-slate-600 px-2 pt-6 pb-0"
+          className="flex w-full flex-col items-start gap-3 border-t border-solid border-slate-700 px-2 pt-5"
           aria-label="Perfil do usuário"
         >
-          <div className="relative flex w-full flex-[0_0_auto] items-center gap-2.5 self-stretch">
+          <div className="flex w-full items-center gap-2.5">
             <div
-              className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-[18px] bg-slate-600"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-700"
               aria-hidden="true"
             >
-              <span className="relative w-fit text-xs font-semibold leading-[normal] tracking-[0] text-slate-50">
-                {userInitials}
-              </span>
+              <span className="text-xs font-semibold text-slate-50">{userInitials}</span>
             </div>
-            <div className="relative flex flex-1 grow flex-col items-start gap-1">
-              <strong className="relative mt-[-1.00px] w-fit text-[13px] font-semibold leading-[normal] tracking-[0] text-slate-50">
-                {session.nome}
+            <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+              <strong className="max-w-full truncate text-[13px] font-semibold text-slate-50">
+                {session?.nome}
               </strong>
-              <span className="relative w-fit whitespace-nowrap text-[11px] font-normal leading-[normal] tracking-[0] text-slate-300">
-                {session.nivel_acesso}
+              <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium text-slate-300">
+                {session?.nivel_acesso}
               </span>
             </div>
           </div>
-          <div className="relative inline-flex flex-[0_0_auto] items-center gap-1.5">
+
+          <div className="inline-flex items-center gap-1.5">
             <span className="relative h-[15px] w-[15px]" aria-hidden="true">
-              <img
-                className="absolute top-[2.68%] left-[2.62%] h-[97.32%] w-[97.38%]"
-                alt="Selo de registro profissional CREA"
-                src={default27}
-              />
+              <img className="h-full w-full" alt="" src={default27} />
             </span>
-            <span className="relative w-fit whitespace-nowrap text-[11px] font-normal leading-[normal] tracking-[0] text-slate-300">
-              {session.crea ? (
+            <span className="text-[11px] text-slate-300">
+              {session?.crea ? (
                 <>
                   <abbr title="Conselho Regional de Engenharia e Agronomia">CREA</abbr> {session.crea}
                 </>
               ) : (
-                "Sem CREA cadastrado"
+                "Acesso Somente Leitura"
               )}
             </span>
           </div>
+
           <button
             type="button"
-            className="text-xs text-slate-300 hover:text-white"
+            className="w-full rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-1.5 text-left text-xs font-medium text-slate-200 transition hover:bg-slate-800 hover:text-white"
             onClick={handleLogout}
           >
-            Sair
+            Sair da plataforma
           </button>
         </section>
       </div>
+      <LiveAuditDrawer placement="bottom-left" />
     </aside>
   );
 };

@@ -134,3 +134,27 @@ textarea:focus-visible {
   border-collapse: collapse;
 }
 
+/* Regras de impressão profissional do Memorial Descritivo / BOM */
+@media print {
+  body {
+    background-color: #ffffff;
+    color: #0f172a;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-sheet {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+  }
+}
+

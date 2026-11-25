@@ -1,231 +1,76 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiRequest, getSession, saveSession } from "../../../lib/api";
-import { Icon, Icon1, Icon2, Icon3, Icon4, Icon5, Icon6, Icon7, Icon8, IconComponentNode } from "./icons/ActionIcons";
-import collaborators from "../assets/collaborators.svg";
-import collaborators2 from "../assets/collaborators-2.svg";
-import collaborators3 from "../assets/collaborators-3.svg";
-import collaborators4 from "../assets/collaborators-4.svg";
-import collaborators5 from "../assets/collaborators-5.svg";
-import collaborators6 from "../assets/collaborators-6.svg";
-import collaborators7 from "../assets/collaborators-7.svg";
-import collaborators8 from "../assets/collaborators-8.svg";
-import collaborators9 from "../assets/collaborators-9.svg";
-import collaborators10 from "../assets/collaborators-10.svg";
-import xdefault from "../assets/default.svg";
-import default2 from "../assets/default-2.svg";
-import default3 from "../assets/default-3.svg";
-import default4 from "../assets/default-4.svg";
-import default5 from "../assets/default-5.svg";
-import default6 from "../assets/default-6.svg";
-import default7 from "../assets/default-7.svg";
-import default8 from "../assets/default-8.svg";
-import default9 from "../assets/default-9.svg";
-import default10 from "../assets/default-10.svg";
-import default11 from "../assets/default-11.svg";
-import default12 from "../assets/default-12.svg";
-import default13 from "../assets/default-13.svg";
-import default14 from "../assets/default-14.svg";
-import default15 from "../assets/default-15.svg";
-import default16 from "../assets/default-16.svg";
-import default17 from "../assets/default-17.svg";
-import default18 from "../assets/default-18.svg";
-import default19 from "../assets/default-19.svg";
-import default20 from "../assets/default-20.svg";
-import default21 from "../assets/default-21.svg";
-import default22 from "../assets/default-22.svg";
-import default23 from "../assets/default-23.svg";
+import { useToast } from "../../../components/ToastProvider";
+import { ProjectReportModal } from "../../../components/ProjectReportModal";
+import { baixarArquivo } from "../../../utils/projectExport";
+import { ehPerfilSomenteLeituraProjetos } from "../../../utils/sessionVault";
 import default28 from "../assets/default-28.svg";
-import image from "../assets/image.svg";
-import objective from "../assets/objective.svg";
-import objective2 from "../assets/objective-2.svg";
-import objective3 from "../assets/objective-3.svg";
-import objective4 from "../assets/objective-4.svg";
-import objective5 from "../assets/objective-5.svg";
-import objective6 from "../assets/objective-6.svg";
-import objective7 from "../assets/objective-7.svg";
-import objective8 from "../assets/objective-8.svg";
-import objective9 from "../assets/objective-9.svg";
-import objective10 from "../assets/objective-10.svg";
-import owner from "../assets/owner.svg";
-import owner2 from "../assets/owner-2.svg";
-import owner3 from "../assets/owner-3.svg";
-import owner4 from "../assets/owner-4.svg";
-import owner5 from "../assets/owner-5.svg";
-import owner6 from "../assets/owner-6.svg";
-import owner7 from "../assets/owner-7.svg";
-import owner8 from "../assets/owner-8.svg";
-import owner9 from "../assets/owner-9.svg";
-import owner10 from "../assets/owner-10.svg";
-import status from "../assets/status.svg";
-import status2 from "../assets/status-2.svg";
-import status3 from "../assets/status-3.svg";
-import status4 from "../assets/status-4.svg";
-import status5 from "../assets/status-5.svg";
-import status6 from "../assets/status-6.svg";
-import status7 from "../assets/status-7.svg";
-import status8 from "../assets/status-8.svg";
-import status9 from "../assets/status-9.svg";
-import status10 from "../assets/status-10.svg";
 
-const projectArtwork = [
-  {
-    name: "Projeto Campinas",
-    code: "OSP-0268 · Campinas / SP",
-    status: status,
-    owner: owner,
-    collaborators: collaborators,
-    objective: objective,
-    folder: default4,
-    start: "26/10/26",
-    end: "12/11/26",
-    action: Icon,
-  },
-  {
-    name: "Projeto Valinhos",
-    code: "OSP-0267 · Valinhos / SP",
-    status: status2,
-    owner: owner2,
-    collaborators: collaborators2,
-    objective: objective2,
-    folder: default6,
-    start: "20/10/26",
-    end: "18/11/26",
-    action: IconComponentNode,
-  },
-  {
-    name: "Bairro da Capela",
-    code: "OSP-0266 · Vinhedo / SP",
-    status: status3,
-    owner: owner3,
-    collaborators: collaborators3,
-    objective: objective3,
-    folder: default8,
-    start: "05/10/26",
-    end: "30/11/26",
-    action: Icon1,
-  },
-  {
-    name: "Parque Portugal",
-    code: "OSP-0265 · Valinhos / SP",
-    status: status4,
-    owner: owner4,
-    collaborators: collaborators4,
-    objective: objective4,
-    folder: default10,
-    start: "01/10/26",
-    end: "28/10/26",
-    action: Icon2,
-  },
-  {
-    name: "Anel Sorocaba",
-    code: "OSP-0264 · Sorocaba / SP",
-    status: status5,
-    owner: owner5,
-    collaborators: collaborators5,
-    objective: objective5,
-    folder: default12,
-    start: "22/10/26",
-    end: "25/11/26",
-    action: Icon3,
-  },
-  {
-    name: "Rede Vinhedo",
-    code: "OSP-0263 · Vinhedo / SP",
-    status: status6,
-    owner: owner6,
-    collaborators: collaborators6,
-    objective: objective6,
-    folder: default14,
-    start: "19/10/26",
-    end: "09/11/26",
-    action: Icon4,
-  },
-  {
-    name: "Parque Logístico Sul",
-    code: "OSP-0262 · Curitiba / PR",
-    status: status7,
-    owner: owner7,
-    collaborators: collaborators7,
-    objective: objective7,
-    folder: default16,
-    start: "08/10/26",
-    end: "06/11/26",
-    action: Icon5,
-  },
-  {
-    name: "Residencial Aurora",
-    code: "OSP-0261 · Londrina / PR",
-    status: status8,
-    owner: owner8,
-    collaborators: collaborators8,
-    objective: objective8,
-    folder: default18,
-    start: "23/10/26",
-    end: "16/12/26",
-    action: Icon6,
-  },
-  {
-    name: "Campus Pinheiros",
-    code: "OSP-0260 · São Paulo / SP",
-    status: status9,
-    owner: owner9,
-    collaborators: collaborators9,
-    objective: objective9,
-    folder: default20,
-    start: "15/10/26",
-    end: "27/11/26",
-    action: Icon7,
-  },
-  {
-    name: "Expansão Jundiaí",
-    code: "OSP-0259 · Jundiaí / SP",
-    status: status10,
-    owner: owner10,
-    collaborators: collaborators10,
-    objective: objective10,
-    folder: default22,
-    start: "12/10/26",
-    end: "20/11/26",
-    action: Icon8,
-  },
+const STATUS_BADGE_MAP = {
+  "Em Planejamento": "border-blue-200 bg-blue-50 text-blue-800",
+  "Em Execução": "border-amber-200 bg-amber-50 text-amber-800",
+  "Concluído": "border-emerald-200 bg-emerald-50 text-emerald-800",
+  "Cancelado": "border-slate-300 bg-slate-100 text-slate-700",
+};
+
+const STATUS_FILTER_OPTIONS = [
+  "Todos",
+  "Em Planejamento",
+  "Em Execução",
+  "Concluído",
+  "Cancelado",
 ];
 
-const calendarIcons = [
-  default5,
-  default7,
-  default9,
-  default11,
-  default13,
-  default15,
-  default17,
-  default19,
-  default21,
-  default23,
-];
+function FolderIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] shrink-0 text-blue-600" aria-hidden="true">
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+    </svg>
+  );
+}
 
-const headerColumns = [
-  { label: "Nome", className: "min-w-[172px]" },
-  { label: "Status", className: "min-w-[120px]" },
-  { label: "Empresa", className: "min-w-36" },
-  { label: "Equipe", className: "min-w-[104px]" },
-  { label: "Tipo de Projeto", className: "min-w-36" },
-  { label: "Custo / Metragem", className: "min-w-[156px]" },
-  { label: "Ações", className: "min-w-9" },
-];
+function MoreActionsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5 text-slate-600" aria-hidden="true">
+      <circle cx="12" cy="5" r="1.75" />
+      <circle cx="12" cy="12" r="1.75" />
+      <circle cx="12" cy="19" r="1.75" />
+    </svg>
+  );
+}
 
 export const CurrentProjectsSection = () => {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [session, setSessionState] = useState(() => getSession());
+  const isViewer = ehPerfilSomenteLeituraProjetos(session?.nivel_acesso);
+  const empresaQuery = session?.nivel_acesso === "SuperAdmin" ? 0 : session.id_empresa_padrao;
+
   const [otpCode, setOtpCode] = useState("");
   const [otpMessage, setOtpMessage] = useState("");
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("Todos");
+  const [sortBy, setSortBy] = useState({ field: "nome", asc: true });
   const [selected, setSelected] = useState([]);
   const [page, setPage] = useState(1);
-  const [sortAsc, setSortAsc] = useState(true);
+  const [itemsPerPage, setItemsPerPage] = useState(5);
+
+  const [showColumnsMenu, setShowColumnsMenu] = useState(false);
+  const [visibleCols, setVisibleCols] = useState({
+    empresa: true,
+    responsavel: true,
+    tipo: true,
+  });
+
   const [actionProject, setActionProject] = useState(null);
+  const [reportProjectId, setReportProjectId] = useState(null);
+  const [editProjectName, setEditProjectName] = useState("");
+  const [isRenamingProject, setIsRenamingProject] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
   const [projects, setProjects] = useState([]);
   const [projectName, setProjectName] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -242,14 +87,13 @@ export const CurrentProjectsSection = () => {
     setError("");
     try {
       const response = await apiRequest(
-        `/projetos?id_empresa=${session.id_empresa_padrao}&id_usuario_autor=${session.id_usuario}`,
+        `/projetos?id_empresa=${empresaQuery}&id_usuario_autor=${session.id_usuario}`,
       );
       setProjects(
-        response.map((project, index) => ({
+        response.map((project) => ({
           ...project,
           name: project.nome,
           code: `IR-${String(project.id_projeto).padStart(4, "0")}`,
-          artwork: projectArtwork[index % projectArtwork.length],
         })),
       );
     } catch (requestError) {
@@ -263,27 +107,50 @@ export const CurrentProjectsSection = () => {
     loadProjects();
   }, []);
 
+  const kpis = useMemo(() => {
+    const total = projects.length;
+    const ativos = projects.filter(
+      (p) => p.status === "Em Planejamento" || p.status === "Em Execução",
+    ).length;
+    const totalMeters = projects.reduce((acc, p) => acc + Number(p.metragem_total || 0), 0);
+    const totalCapex = projects.reduce((acc, p) => acc + Number(p.custo_estimado || 0), 0);
+    return { total, ativos, totalMeters, totalCapex };
+  }, [projects]);
+
   const filteredProjects = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
+    const byStatus =
+      statusFilter === "Todos"
+        ? projects
+        : projects.filter((project) => project.status === statusFilter);
 
     const base = !normalizedQuery
-      ? projects
-      : projects.filter((project) =>
-          `${project.name} ${project.code} ${project.status}`.toLowerCase().includes(normalizedQuery),
+      ? byStatus
+      : byStatus.filter((project) =>
+          `${project.name} ${project.code} ${project.status} ${project.engenheiro_nome || ""}`
+            .toLowerCase()
+            .includes(normalizedQuery),
         );
 
-    return [...base].sort((a, b) =>
-      sortAsc ? a.name.localeCompare(b.name, "pt-BR") : b.name.localeCompare(a.name, "pt-BR"),
-    );
-  }, [projects, query, sortAsc]);
+    return [...base].sort((a, b) => {
+      let diff = 0;
+      if (sortBy.field === "metragem") {
+        diff = Number(a.metragem_total || 0) - Number(b.metragem_total || 0);
+      } else if (sortBy.field === "custo") {
+        diff = Number(a.custo_estimado || 0) - Number(b.custo_estimado || 0);
+      } else {
+        diff = a.name.localeCompare(b.name, "pt-BR");
+      }
+      return sortBy.asc ? diff : -diff;
+    });
+  }, [projects, query, statusFilter, sortBy]);
 
-  const ITEMS_PER_PAGE = 5;
-  const totalPages = Math.max(1, Math.ceil(filteredProjects.length / ITEMS_PER_PAGE));
+  const totalPages = Math.max(1, Math.ceil(filteredProjects.length / itemsPerPage));
   const safePage = Math.min(page, totalPages);
   const paginatedProjects = useMemo(() => {
-    const startIdx = (safePage - 1) * ITEMS_PER_PAGE;
-    return filteredProjects.slice(startIdx, startIdx + ITEMS_PER_PAGE);
-  }, [filteredProjects, safePage]);
+    const startIdx = (safePage - 1) * itemsPerPage;
+    return filteredProjects.slice(startIdx, startIdx + itemsPerPage);
+  }, [filteredProjects, safePage, itemsPerPage]);
 
   const pageTotalCost = useMemo(
     () => paginatedProjects.reduce((acc, item) => acc + Number(item.custo_estimado || 0), 0),
@@ -293,6 +160,12 @@ export const CurrentProjectsSection = () => {
     () => paginatedProjects.reduce((acc, item) => acc + Number(item.metragem_total || 0), 0),
     [paginatedProjects],
   );
+
+  const toggleSort = (field) => {
+    setSortBy((prev) =>
+      prev.field === field ? { field, asc: !prev.asc } : { field, asc: true },
+    );
+  };
 
   const updateProjectStatus = async (idProjeto, novoStatus) => {
     setIsUpdatingStatus(true);
@@ -306,31 +179,66 @@ export const CurrentProjectsSection = () => {
         }),
       });
       await loadProjects();
-      setActionProject((curr) => (curr && curr.id_projeto === idProjeto ? { ...curr, status: novoStatus } : curr));
+      setActionProject((curr) =>
+        curr && curr.id_projeto === idProjeto ? { ...curr, status: novoStatus } : curr,
+      );
+      showToast(`Status alterado para "${novoStatus}".`, { type: "success" });
     } catch (err) {
       setError(err.message);
+      showToast(err.message, { type: "error" });
     } finally {
       setIsUpdatingStatus(false);
     }
   };
 
-  const exportProjectReport = async (project) => {
+  const renameProject = async (event) => {
+    event.preventDefault();
+    if (!actionProject) return;
+    const nomeLimpo = editProjectName.trim();
+    if (!nomeLimpo) return;
+
+    setIsRenamingProject(true);
     setError("");
     try {
-      const detail = await apiRequest(
-        `/projetos/${project.id_projeto}?id_usuario_autor=${session.id_usuario}`,
+      const updated = await apiRequest(`/projetos/${actionProject.id_projeto}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          nome: nomeLimpo,
+          id_usuario_autor: session.id_usuario,
+        }),
+      });
+      await loadProjects();
+      setActionProject((curr) =>
+        curr && curr.id_projeto === actionProject.id_projeto
+          ? { ...curr, nome: updated.nome, name: updated.nome }
+          : curr,
       );
-      const blob = new Blob([JSON.stringify(detail, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `relatorio-projeto-${project.id_projeto}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      showToast(`Projeto renomeado para "${updated.nome}".`, { type: "success" });
     } catch (err) {
       setError(err.message);
+      showToast(err.message, { type: "error" });
+    } finally {
+      setIsRenamingProject(false);
+    }
+  };
+
+  const exportSelectedBatch = async () => {
+    if (selected.length === 0) return;
+    const targetProjects = projects.filter((p) => selected.includes(p.code));
+    try {
+      const details = await Promise.all(
+        targetProjects.map((proj) =>
+          apiRequest(`/projetos/${proj.id_projeto}?id_usuario_autor=${session.id_usuario}`),
+        ),
+      );
+      baixarArquivo(
+        JSON.stringify({ exportado_em_utc: new Date().toISOString(), projetos: details }, null, 2),
+        `lote-projetos-infraroute-${details.length}.json`,
+        "application/json;charset=utf-8",
+      );
+      showToast(`${details.length} projeto(s) exportado(s) em lote.`, { type: "success" });
+    } catch (err) {
+      showToast(err.message, { type: "error" });
     }
   };
 
@@ -349,26 +257,23 @@ export const CurrentProjectsSection = () => {
   const toggleAll = () => {
     if (allSelected) {
       setSelected((current) =>
-        current.filter(
-          (code) => !filteredProjects.some((project) => project.code === code),
-        ),
+        current.filter((code) => !filteredProjects.some((project) => project.code === code)),
       );
       return;
     }
 
     setSelected((current) => [
-      ...new Set([
-        ...current,
-        ...filteredProjects.map((project) => project.code),
-      ]),
+      ...new Set([...current, ...filteredProjects.map((project) => project.code)]),
     ]);
   };
 
   const refreshProjects = () => {
     setQuery("");
+    setStatusFilter("Todos");
     setSelected([]);
     setPage(1);
     loadProjects();
+    showToast("Lista de projetos atualizada.", { type: "info" });
   };
 
   const createProject = async (event) => {
@@ -391,6 +296,7 @@ export const CurrentProjectsSection = () => {
       setProjectName("");
       setShowCreateForm(false);
       await loadProjects();
+      showToast(`Projeto "${nome}" criado com sucesso!`, { type: "success" });
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -414,7 +320,7 @@ export const CurrentProjectsSection = () => {
       saveSession(updated);
       setSessionState(updated);
       setOtpCode("");
-      setOtpMessage("E-mail verificado com sucesso!");
+      showToast("E-mail corporativo verificado com sucesso!", { type: "success" });
     } catch (err) {
       setOtpMessage(err.message);
     } finally {
@@ -440,6 +346,12 @@ export const CurrentProjectsSection = () => {
       setOtpMessage(err.message);
     }
   };
+
+  const visibleColCount =
+    5 +
+    (visibleCols.empresa ? 1 : 0) +
+    (visibleCols.responsavel ? 1 : 0) +
+    (visibleCols.tipo ? 1 : 0);
 
   return (
     <main className="relative flex flex-1 grow flex-col items-start gap-6 self-stretch p-4 sm:p-6 lg:p-8">
@@ -501,106 +413,242 @@ export const CurrentProjectsSection = () => {
           </form>
         </section>
       )}
-      <header className="relative flex min-h-20 w-full flex-[0_0_auto] flex-col items-start gap-4 self-stretch">
-        <div className="relative flex w-full flex-[0_0_auto] items-center justify-between self-stretch">
-          <nav
-            aria-label="Breadcrumb"
-            className="relative inline-flex flex-[0_0_auto] items-center"
-          >
-            <ol className="m-0 inline-flex list-none items-center gap-2 p-0">
-              <li className="inline-flex items-center gap-2">
-                <span className="relative w-fit whitespace-nowrap text-[11px] font-normal leading-[normal] tracking-[0] text-slate-600">
-                  Workspace
-                </span>
-                <span className="relative h-3 w-3" aria-hidden="true">
-                  <img
-                    className="absolute top-[17.92%] left-[30.42%] h-[82.08%] w-[69.58%]"
-                    alt=""
-                    src={xdefault}
-                  />
-                </span>
-              </li>
-              <li>
-                <span
-                  aria-current="page"
-                  className="relative w-fit whitespace-nowrap text-[11px] font-medium leading-[normal] tracking-[0] text-slate-900"
-                >
-                  Projetos
-                </span>
+
+      <header className="flex w-full flex-col items-start gap-4">
+        <div className="flex w-full flex-wrap items-center justify-between gap-2">
+          <nav aria-label="Breadcrumb">
+            <ol className="m-0 inline-flex list-none items-center gap-2 p-0 text-[11px] text-slate-600">
+              <li>Workspace</li>
+              <li aria-hidden="true">/</li>
+              <li aria-current="page" className="font-semibold text-slate-900">
+                Projetos
               </li>
             </ol>
           </nav>
-          <p className="relative w-fit whitespace-nowrap text-[11px] font-normal leading-[normal] tracking-[0] text-slate-600">
-            Gestão de expansão <abbr title="Outside Plant (Planta Externa)">OSP</abbr> / <abbr title="Fiber to the Home">FTTH</abbr>
-          </p>
+          <div className="flex items-center gap-2">
+            {isViewer && (
+              <span className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800">
+                Perfil {session?.nivel_acesso} (Somente Leitura em Projetos)
+              </span>
+            )}
+            <p className="m-0 text-[11px] text-slate-600">
+              Gestão de expansão <abbr title="Outside Plant (Planta Externa)">OSP</abbr> /{" "}
+              <abbr title="Fiber to the Home">FTTH</abbr>
+            </p>
+          </div>
         </div>
-        <div className="relative flex w-full flex-[0_0_auto] flex-wrap items-center gap-[12px_24px] self-stretch">
-          <h1 className="relative flex-1 text-[32px] font-bold leading-10 tracking-[-0.26px] text-slate-900">
+
+        <div className="flex w-full flex-wrap items-center justify-between gap-4">
+          <h1 className="text-[28px] font-bold leading-9 tracking-[-0.26px] text-slate-900 sm:text-[32px]">
             Projetos atuais
           </h1>
-          <div className="relative inline-flex flex-[0_0_auto] flex-wrap items-center gap-3">
+          <div className="relative flex flex-wrap items-center gap-2.5">
             <label
               htmlFor="search-projects"
-              className="relative flex h-11 w-[210px] items-center gap-3 rounded-lg border border-solid border-slate-300 bg-white px-4 py-0"
+              className="flex h-11 w-full items-center gap-2.5 rounded-lg border border-solid border-slate-300 bg-white px-3.5 sm:w-[220px]"
             >
-              <img
-                className="relative h-[19.7px] w-[19.7px]"
-                alt=""
-                src={default28}
-              />
+              <img className="h-[18px] w-[18px]" alt="" src={default28} />
               <span className="sr-only">Buscar projetos</span>
               <input
                 id="search-projects"
                 name="query"
                 type="search"
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Buscar projetos..."
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setPage(1);
+                }}
+                placeholder="Buscar projeto ou responsável..."
                 aria-label="Buscar projetos"
-                className="relative min-w-0 flex-1 bg-transparent text-xs font-normal leading-5 tracking-[0] text-slate-600 outline-none placeholder:text-slate-600"
+                className="min-w-0 flex-1 bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-500"
               />
             </label>
+
             <button
               type="button"
               onClick={refreshProjects}
-              className="relative inline-flex h-12 flex-[0_0_auto] items-center justify-center gap-2.5 rounded-lg border border-solid border-slate-300 bg-white px-6 py-3"
+              className="inline-flex h-11 cursor-pointer items-center justify-center rounded-lg border border-solid border-slate-300 bg-white px-4 text-xs font-semibold text-blue-700 transition hover:bg-slate-50"
             >
-              <span className="relative w-fit whitespace-nowrap text-center text-sm font-semibold leading-6 tracking-[0] text-blue-700">
-                Refresh ↻
-              </span>
+              Atualizar ↻
             </button>
+
+            <div className="relative">
+              <button
+                type="button"
+                aria-expanded={showColumnsMenu}
+                onClick={() => setShowColumnsMenu((prev) => !prev)}
+                className="inline-flex h-11 cursor-pointer items-center justify-center rounded-lg border border-solid border-slate-300 bg-white px-4 text-xs font-semibold text-blue-700 transition hover:bg-slate-50"
+              >
+                Colunas ⚙
+              </button>
+              {showColumnsMenu && (
+                <div
+                  role="region"
+                  aria-label="Personalizar colunas e paginação"
+                  className="absolute right-0 z-30 mt-2 w-60 rounded-xl border border-slate-200 bg-white p-4 shadow-xl"
+                >
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    Colunas Visíveis
+                  </p>
+                  <div className="space-y-1.5 text-xs text-slate-700">
+                    {[
+                      { key: "empresa", label: "Empresa (Tenant)" },
+                      { key: "responsavel", label: "Responsável Técnico (CREA)" },
+                      { key: "tipo", label: "Tipo de Rede" },
+                    ].map((col) => (
+                      <label key={col.key} className="flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={visibleCols[col.key]}
+                          onChange={() =>
+                            setVisibleCols((curr) => ({ ...curr, [col.key]: !curr[col.key] }))
+                          }
+                          className="h-4 w-4 accent-blue-600"
+                        />
+                        <span>{col.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="mt-3 border-t border-slate-100 pt-3">
+                    <label htmlFor="items-per-page" className="block text-[11px] font-semibold text-slate-500">
+                      Itens por página
+                    </label>
+                    <select
+                      id="items-per-page"
+                      value={itemsPerPage}
+                      onChange={(e) => {
+                        setItemsPerPage(Number(e.target.value));
+                        setPage(1);
+                      }}
+                      className="mt-1 h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-900"
+                    >
+                      <option value={5}>5 projetos por página</option>
+                      <option value={10}>10 projetos por página</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <button
               type="button"
-              className="relative inline-flex h-12 flex-[0_0_auto] items-center justify-center gap-2.5 rounded-lg border border-solid border-slate-300 bg-white px-6 py-3"
-            >
-              <span className="relative w-fit whitespace-nowrap text-center text-sm font-semibold leading-6 tracking-[0] text-blue-700">
-                Customize ⚙
-              </span>
-            </button>
-            <button
-              type="button"
+              disabled={isViewer}
+              title={
+                isViewer
+                  ? "Perfil Visualizador não tem permissão para criar projetos (RBAC)."
+                  : "Criar um novo projeto de expansão óptica"
+              }
               onClick={() => setShowCreateForm(true)}
-              className="relative inline-flex h-12 flex-[0_0_auto] items-center justify-center gap-2.5 rounded-lg bg-blue-600 px-6 py-3"
+              className="inline-flex h-11 cursor-pointer items-center justify-center rounded-lg bg-blue-600 px-5 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <span className="relative w-fit whitespace-nowrap text-center text-sm font-semibold leading-6 tracking-[0] text-white">
-                New project +
-              </span>
+              Novo Projeto +
             </button>
           </div>
         </div>
       </header>
 
+      <section aria-label="Resumo executivo do portfólio" className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            Projetos na Carteira
+          </span>
+          <p className="mt-1 text-2xl font-bold text-slate-900">{kpis.total}</p>
+          <span className="text-xs text-slate-500">Isolamento multi-tenant ativo</span>
+        </article>
+        <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            Em Planejamento / Execução
+          </span>
+          <p className="mt-1 text-2xl font-bold text-blue-700">{kpis.ativos}</p>
+          <span className="text-xs text-slate-500">Abertos para edição no GIS</span>
+        </article>
+        <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            Malha Óptica Total
+          </span>
+          <p className="mt-1 text-2xl font-bold text-slate-900">
+            {(kpis.totalMeters / 1000).toLocaleString("pt-BR", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}{" "}
+            km
+          </p>
+          <span className="text-xs text-slate-500">
+            {kpis.totalMeters.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} metros otimizados
+          </span>
+        </article>
+        <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            CAPEX Total Estimado
+          </span>
+          <p className="mt-1 text-2xl font-bold text-emerald-700">
+            {kpis.totalCapex.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+          </p>
+          <span className="text-xs text-slate-500">Cabos AGM + equipamentos</span>
+        </article>
+      </section>
+
+      <div className="flex w-full flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filtrar por status">
+          {STATUS_FILTER_OPTIONS.map((statusOpt) => {
+            const active = statusFilter === statusOpt;
+            return (
+              <button
+                key={statusOpt}
+                type="button"
+                aria-pressed={active}
+                onClick={() => {
+                  setStatusFilter(statusOpt);
+                  setPage(1);
+                }}
+                className={`cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition ${
+                  active
+                    ? "border-blue-600 bg-blue-600 text-white"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                {statusOpt}
+              </button>
+            );
+          })}
+        </div>
+
+        {selected.length > 0 && (
+          <div
+            role="region"
+            aria-label="Ações em lote"
+            className="flex flex-wrap items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-900"
+          >
+            <strong>{selected.length} selecionado(s)</strong>
+            <button
+              type="button"
+              onClick={exportSelectedBatch}
+              className="rounded bg-blue-600 px-2.5 py-1 font-semibold text-white hover:bg-blue-700"
+            >
+              Exportar Lote (JSON)
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelected([])}
+              className="rounded border border-blue-300 bg-white px-2.5 py-1 font-medium text-blue-800 hover:bg-blue-100"
+            >
+              Limpar
+            </button>
+          </div>
+        )}
+      </div>
+
       <section
-        className="relative flex w-full flex-[0_0_auto] flex-col items-start gap-4 self-stretch"
+        className="flex w-full flex-col items-start gap-4"
         aria-label="Lista de projetos da empresa"
       >
-        <div className="tabela-wrap w-full rounded-lg border border-solid border-slate-200 bg-white">
+        <div className="tabela-wrap w-full rounded-xl border border-solid border-slate-200 bg-white shadow-sm">
           <table className="tabela-projetos w-full text-left">
             <caption className="sr-only">
               Relação de projetos de expansão óptica da empresa {session?.razao_social_empresa}
             </caption>
             <thead className="border-b border-solid border-slate-200 bg-slate-50">
-              <tr className="h-[52px]">
+              <tr className="h-[50px]">
                 <th scope="col" className="w-12 px-4 py-2">
                   <label htmlFor="select-all-projects" className="sr-only">
                     Selecionar todos os projetos
@@ -612,67 +660,93 @@ export const CurrentProjectsSection = () => {
                     checked={allSelected}
                     onChange={toggleAll}
                     aria-label="Selecionar todos os projetos"
-                    className="relative h-4 w-4 rounded border border-solid border-slate-300 accent-blue-600"
+                    className="h-4 w-4 rounded border-slate-300 accent-blue-600"
                   />
                 </th>
-                {headerColumns.map((column) => (
-                  <th
-                    scope="col"
-                    key={column.label}
-                    className={`px-4 py-2 text-[10px] font-semibold leading-[15px] tracking-[0] text-slate-600 ${column.className}`}
+                <th scope="col" className="min-w-[180px] px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                  <button
+                    type="button"
+                    onClick={() => toggleSort("nome")}
+                    className="inline-flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 font-semibold text-slate-700 hover:text-blue-700"
                   >
-                    {column.label === "Nome" ? (
-                      <button
-                        type="button"
-                        onClick={() => setSortAsc((prev) => !prev)}
-                        className="flex cursor-pointer items-center gap-2 border-0 bg-transparent p-0 text-left font-semibold text-slate-600"
-                        title="Ordenar por nome"
-                      >
-                        <span>{column.label}</span>
-                        <span className="relative h-3 w-3" aria-hidden="true">
-                          <img
-                            className={`absolute top-[13.75%] left-[13.75%] h-[86.25%] w-[86.25%] transition-transform ${sortAsc ? "" : "rotate-180"}`}
-                            alt=""
-                            src={image}
-                          />
-                        </span>
-                      </button>
-                    ) : (
-                      <span>{column.label}</span>
-                    )}
+                    <span>Nome</span>
+                    <span aria-hidden="true">{sortBy.field === "nome" ? (sortBy.asc ? "↑" : "↓") : "↕"}</span>
+                  </button>
+                </th>
+                <th scope="col" className="min-w-[130px] px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                  Status
+                </th>
+                {visibleCols.empresa && (
+                  <th scope="col" className="min-w-[150px] px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                    Empresa
                   </th>
-                ))}
+                )}
+                {visibleCols.responsavel && (
+                  <th scope="col" className="min-w-[160px] px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                    Responsável (CREA)
+                  </th>
+                )}
+                {visibleCols.tipo && (
+                  <th scope="col" className="min-w-[120px] px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                    Tipo de Rede
+                  </th>
+                )}
+                <th scope="col" className="min-w-[170px] px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort("custo")}
+                      className="inline-flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 font-semibold text-slate-700 hover:text-blue-700"
+                    >
+                      <span>Custo</span>
+                      <span aria-hidden="true">{sortBy.field === "custo" ? (sortBy.asc ? "↑" : "↓") : ""}</span>
+                    </button>
+                    <span>/</span>
+                    <button
+                      type="button"
+                      onClick={() => toggleSort("metragem")}
+                      className="inline-flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 font-semibold text-slate-700 hover:text-blue-700"
+                    >
+                      <span>Metragem</span>
+                      <span aria-hidden="true">{sortBy.field === "metragem" ? (sortBy.asc ? "↑" : "↓") : ""}</span>
+                    </button>
+                  </div>
+                </th>
+                <th scope="col" className="w-16 px-4 py-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                  Ações
+                </th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="p-6 text-sm text-slate-600">
+                  <td colSpan={visibleColCount} className="p-6 text-sm text-slate-600">
                     Carregando projetos...
                   </td>
                 </tr>
               ) : error && projects.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-6 text-sm text-red-600" role="alert">
+                  <td colSpan={visibleColCount} className="p-6 text-sm text-red-600" role="alert">
                     {error}
                   </td>
                 </tr>
               ) : filteredProjects.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-6 text-sm text-slate-600">
-                    Nenhum projeto encontrado.
+                  <td colSpan={visibleColCount} className="p-6 text-sm text-slate-600">
+                    Nenhum projeto encontrado para o filtro aplicado.
                   </td>
                 </tr>
               ) : (
-                paginatedProjects.map((project, index) => {
-                  const ActionIcon = project.artwork.action;
-                  const calendarIcon = calendarIcons[index % calendarIcons.length];
+                paginatedProjects.map((project) => {
                   const checkboxId = `select-project-${project.id_projeto}`;
+                  const isFrozen = project.status === "Concluído" || project.status === "Cancelado";
+                  const badgeClass =
+                    STATUS_BADGE_MAP[project.status] || "border-slate-200 bg-slate-50 text-slate-700";
 
                   return (
                     <tr
                       key={project.id_projeto}
-                      className="h-14 border-b border-solid border-slate-200 bg-white hover:bg-slate-50/70"
+                      className="h-14 border-b border-solid border-slate-200 bg-white transition hover:bg-slate-50/80"
                     >
                       <td className="px-4 py-2">
                         <label htmlFor={checkboxId} className="sr-only">
@@ -685,71 +759,83 @@ export const CurrentProjectsSection = () => {
                           checked={selected.includes(project.code)}
                           onChange={() => toggleProject(project.code)}
                           aria-label={`Selecionar ${project.name}`}
-                          className="relative h-4 w-4 rounded border border-solid border-slate-300 accent-blue-600"
+                          className="h-4 w-4 rounded border-slate-300 accent-blue-600"
                         />
                       </td>
-                      <th scope="row" className="min-w-[172px] px-4 py-2 font-normal">
-                        <div className="flex items-center gap-2">
-                          <span className="relative h-[18px] w-[18px] shrink-0" aria-hidden="true">
-                            <img
-                              className="absolute top-[7.78%] left-[3.61%] h-[92.22%] w-[96.39%]"
-                              alt=""
-                              src={project.artwork.folder}
-                            />
-                          </span>
-                          <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
+                      <th scope="row" className="px-4 py-2 font-normal">
+                        <div className="flex items-center gap-2.5">
+                          <FolderIcon />
+                          <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
                             <button
                               type="button"
-                              className="max-w-full truncate text-left text-xs font-semibold leading-4 tracking-[0] text-slate-900 hover:text-blue-700 hover:underline"
+                              className="max-w-full cursor-pointer truncate text-left text-xs font-semibold text-slate-900 hover:text-blue-700 hover:underline"
                               onClick={() => navigate(`/workspace?id_projeto=${project.id_projeto}`)}
                             >
                               {project.name}
                             </button>
-                            <span className="max-w-full truncate text-[10px] font-normal leading-[14px] tracking-[0] text-slate-600">
-                              {project.code} · {project.metragem_total.toFixed(0)} m
+                            <span className="max-w-full truncate text-[10px] text-slate-500">
+                              {project.code} · Abrir no mapa GIS
                             </span>
                           </div>
                         </div>
                       </th>
-                      <td className="min-w-[120px] px-4 py-2 text-xs text-slate-700">
-                        {project.status}
+                      <td className="px-4 py-2 text-xs">
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${badgeClass}`}
+                        >
+                          {isFrozen && <span aria-hidden="true">🔒</span>}
+                          <span>{project.status}</span>
+                        </span>
                       </td>
-                      <td className="min-w-36 truncate px-4 py-2 text-xs text-slate-700">
-                        {session.razao_social_empresa}
-                      </td>
-                      <td className="min-w-[104px] px-4 py-2 text-xs text-slate-500">
-                        —
-                      </td>
-                      <td className="min-w-36 px-4 py-2 text-xs text-slate-700">
-                        Expansão <abbr title="Outside Plant (Planta Externa)">OSP</abbr>
-                      </td>
-                      <td className="min-w-[156px] px-4 py-2">
-                        <div className="flex items-center gap-2">
-                          <span className="relative h-[15px] w-[15px] shrink-0" aria-hidden="true">
-                            <img
-                              className="absolute top-[2.66%] left-[6.83%] h-[97.34%] w-[93.17%]"
-                              alt=""
-                              src={calendarIcon}
-                            />
-                          </span>
-                          <div className="inline-flex flex-col items-start gap-1">
-                            <span className="whitespace-nowrap text-[11px] font-normal leading-[14px] text-slate-600">
-                              {project.custo_estimado.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                      {visibleCols.empresa && (
+                        <td className="max-w-[180px] truncate px-4 py-2 text-xs text-slate-700">
+                          {session?.razao_social_empresa}
+                        </td>
+                      )}
+                      {visibleCols.responsavel && (
+                        <td className="px-4 py-2 text-xs text-slate-700">
+                          <div className="flex flex-col">
+                            <span className="font-medium text-slate-900">
+                              {project.engenheiro_nome || `Eng. #${project.id_engenheiro}`}
                             </span>
-                            <span className="whitespace-nowrap text-[11px] font-normal leading-[14px] text-slate-900">
-                              {project.metragem_total.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} m
+                            <span className="text-[10px] text-slate-500">
+                              {project.engenheiro_crea ? `CREA ${project.engenheiro_crea}` : "CREA vinculado"}
                             </span>
                           </div>
+                        </td>
+                      )}
+                      {visibleCols.tipo && (
+                        <td className="px-4 py-2 text-xs text-slate-700">
+                          Expansão <abbr title="Outside Plant (Planta Externa)">OSP</abbr>
+                        </td>
+                      )}
+                      <td className="px-4 py-2">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="whitespace-nowrap text-xs font-semibold text-slate-900">
+                            {Number(project.custo_estimado || 0).toLocaleString("pt-BR", {
+                              style: "currency",
+                              currency: "BRL",
+                            })}
+                          </span>
+                          <span className="whitespace-nowrap text-[11px] text-slate-600">
+                            {Number(project.metragem_total || 0).toLocaleString("pt-BR", {
+                              maximumFractionDigits: 1,
+                            })}{" "}
+                            m
+                          </span>
                         </div>
                       </td>
-                      <td className="min-w-9 px-4 py-2">
+                      <td className="px-4 py-2 text-right">
                         <button
                           type="button"
                           aria-label={`Ações de ${project.name}`}
-                          onClick={() => setActionProject(project)}
-                          className="cursor-pointer border-0 bg-transparent p-0"
+                          onClick={() => {
+                            setActionProject(project);
+                            setEditProjectName(project.name);
+                          }}
+                          className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-transparent hover:border-slate-200 hover:bg-slate-100"
                         >
-                          <ActionIcon className="!relative !h-8 !w-8" />
+                          <MoreActionsIcon />
                         </button>
                       </td>
                     </tr>
@@ -761,7 +847,7 @@ export const CurrentProjectsSection = () => {
               <tr className="h-11">
                 <th
                   scope="row"
-                  colSpan={6}
+                  colSpan={visibleColCount - 2}
                   className="px-4 py-2 text-xs font-semibold text-slate-700"
                 >
                   Total acumulado (página atual)
@@ -776,38 +862,20 @@ export const CurrentProjectsSection = () => {
           </table>
         </div>
 
-        <div className="relative flex h-14 w-full flex-wrap items-center justify-between self-stretch overflow-hidden rounded-lg border border-solid border-slate-200 bg-white px-4 py-0 shadow-[0px_4px_16px_#0f172a0d]">
-          <p className="relative w-fit text-xs font-normal leading-[normal] tracking-[0] text-slate-600">
-            Exibindo {paginatedProjects.length} de {filteredProjects.length} projetos
+        <div className="flex min-h-14 w-full flex-wrap items-center justify-between gap-2 rounded-xl border border-solid border-slate-200 bg-white px-4 py-2 shadow-sm">
+          <p className="text-xs text-slate-600">
+            Exibindo {paginatedProjects.length} de {filteredProjects.length} projeto(s)
           </p>
-          <nav
-            aria-label="Paginação"
-            className="relative inline-flex flex-[0_0_auto] items-center"
-          >
+          <nav aria-label="Paginação">
             <ul className="m-0 inline-flex list-none items-center gap-1 p-0">
               <li>
                 <button
                   type="button"
+                  disabled={safePage <= 1}
                   onClick={() => setPage((current) => Math.max(1, current - 1))}
-                  aria-label="Página anterior"
-                  className="relative h-3.5 w-3.5 border-0 bg-transparent p-0"
+                  className="inline-flex h-8 items-center justify-center rounded-md border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                 >
-                  <img
-                    className="absolute top-[18.93%] left-[28.91%] h-[81.07%] w-[71.09%]"
-                    alt=""
-                    src={default2}
-                  />
-                </button>
-              </li>
-              <li>
-                <button
-                  type="button"
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                  className="relative inline-flex h-8 min-w-8 flex-[0_0_auto] items-center justify-center overflow-hidden rounded-md bg-white px-2.5 py-0"
-                >
-                  <span className="relative w-fit whitespace-nowrap text-[11px] font-medium leading-[normal] tracking-[0] text-slate-600">
-                    Anterior
-                  </span>
+                  Anterior
                 </button>
               </li>
               {Array.from({ length: totalPages }, (_, idx) => idx + 1).map((item) => (
@@ -816,76 +884,59 @@ export const CurrentProjectsSection = () => {
                     type="button"
                     onClick={() => setPage(item)}
                     aria-current={safePage === item ? "page" : undefined}
-                    className={`relative inline-flex h-8 min-w-8 flex-[0_0_auto] items-center justify-center overflow-hidden rounded-md px-2.5 py-0 ${
-                      safePage === item ? "bg-blue-600" : "bg-white"
+                    className={`inline-flex h-8 min-w-8 items-center justify-center rounded-md px-2.5 text-[11px] font-semibold ${
+                      safePage === item
+                        ? "bg-blue-600 text-white"
+                        : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                     }`}
                   >
-                    <span
-                      className={`relative w-fit whitespace-nowrap text-[11px] font-semibold leading-[normal] tracking-[0] ${
-                        safePage === item ? "text-white" : "text-slate-600"
-                      }`}
-                    >
-                      {item}
-                    </span>
+                    {item}
                   </button>
                 </li>
               ))}
               <li>
                 <button
                   type="button"
+                  disabled={safePage >= totalPages}
                   onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                  className="relative inline-flex h-8 min-w-8 flex-[0_0_auto] items-center justify-center overflow-hidden rounded-md bg-white px-2.5 py-0"
+                  className="inline-flex h-8 items-center justify-center rounded-md border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                 >
-                  <span className="relative w-fit whitespace-nowrap text-[11px] font-medium leading-[normal] tracking-[0] text-slate-600">
-                    Próximo
-                  </span>
-                </button>
-              </li>
-              <li>
-                <button
-                  type="button"
-                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                  aria-label="Próxima página"
-                  className="relative h-3.5 w-3.5 border-0 bg-transparent p-0"
-                >
-                  <img
-                    className="absolute top-[18.93%] left-[31.43%] h-[81.07%] w-[68.57%]"
-                    alt=""
-                    src={default3}
-                  />
+                  Próximo
                 </button>
               </li>
             </ul>
           </nav>
         </div>
       </section>
-      <footer className="relative flex w-full flex-[0_0_auto] flex-wrap items-center justify-between gap-2 self-stretch">
-        <small className="relative w-fit whitespace-nowrap text-[11px] font-normal leading-[normal] tracking-[0] text-slate-600">
-          Dados demonstrativos · Não representam dados reais
+
+      <footer className="flex w-full flex-wrap items-center justify-between gap-2 pt-2">
+        <small className="text-[11px] text-slate-600">
+          InfraRoute B2B · Persistência SQL Relacional & Algoritmo de Prim
         </small>
-        <address className="relative w-fit whitespace-nowrap text-[11px] font-normal not-italic leading-[normal] tracking-[0] text-slate-600">
-          InfraRoute / Engenharia de redes ·{" "}
+        <address className="text-[11px] not-italic text-slate-600">
+          Engenharia de redes ·{" "}
           <a className="text-blue-700 hover:underline" href="mailto:engenharia@infraroute.com.br">
             engenharia@infraroute.com.br
           </a>
         </address>
       </footer>
+
       {error && projects.length > 0 && (
-        <p className="text-sm text-red-600" role="alert">{error}</p>
+        <p className="text-sm text-red-600" role="alert">
+          {error}
+        </p>
       )}
+
       {showCreateForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
           <form
             className="w-full max-w-md space-y-4 rounded-xl bg-white p-6 shadow-xl"
             onSubmit={createProject}
           >
-            <h2 className="text-xl font-semibold text-slate-900">Criar projeto</h2>
+            <h2 className="text-xl font-semibold text-slate-900">Criar novo projeto</h2>
             <fieldset className="m-0 space-y-2 border-0 p-0">
               <legend className="sr-only">Identificação do novo projeto</legend>
-              <label
-                htmlFor="new-project-name"
-                className="block text-sm font-medium text-slate-700"
-              >
+              <label htmlFor="new-project-name" className="block text-sm font-medium text-slate-700">
                 Nome do projeto
               </label>
               <input
@@ -899,7 +950,7 @@ export const CurrentProjectsSection = () => {
                 placeholder="Ex.: Expansão FTTH Setor Norte"
                 value={projectName}
                 onChange={(event) => setProjectName(event.target.value)}
-                className="h-11 w-full rounded-lg border border-slate-300 px-3"
+                className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm"
               />
             </fieldset>
             {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
@@ -922,10 +973,12 @@ export const CurrentProjectsSection = () => {
           </form>
         </div>
       )}
+
       {actionProject && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
           <div
             role="dialog"
+            aria-modal="true"
             aria-label={`Gerenciar ${actionProject.name}`}
             className="w-full max-w-md space-y-4 rounded-xl bg-white p-6 shadow-xl"
           >
@@ -939,24 +992,72 @@ export const CurrentProjectsSection = () => {
               <button
                 type="button"
                 onClick={() => setActionProject(null)}
-                className="text-slate-400 hover:text-slate-700"
+                className="rounded px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                 aria-label="Fechar ações do projeto"
               >
                 ✕
               </button>
             </div>
+
+            <form onSubmit={renameProject} className="space-y-2 border-t border-slate-100 pt-3">
+              <label
+                htmlFor="edit-project-name"
+                className="block text-xs font-semibold uppercase tracking-wider text-slate-500"
+              >
+                Renomear Projeto
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="edit-project-name"
+                  name="editProjectName"
+                  type="text"
+                  required
+                  minLength={1}
+                  maxLength={255}
+                  disabled={
+                    isViewer ||
+                    isRenamingProject ||
+                    actionProject.status === "Concluído" ||
+                    actionProject.status === "Cancelado"
+                  }
+                  value={editProjectName}
+                  onChange={(e) => setEditProjectName(e.target.value)}
+                  className="h-9 flex-1 rounded-lg border border-slate-300 px-3 text-xs text-slate-900 disabled:bg-slate-100"
+                />
+                <button
+                  type="submit"
+                  disabled={
+                    isViewer ||
+                    isRenamingProject ||
+                    !editProjectName.trim() ||
+                    editProjectName.trim() === actionProject.name ||
+                    actionProject.status === "Concluído" ||
+                    actionProject.status === "Cancelado"
+                  }
+                  className="h-9 rounded-lg bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isRenamingProject ? "Salvando..." : "Salvar Nome"}
+                </button>
+              </div>
+              {(actionProject.status === "Concluído" || actionProject.status === "Cancelado") && (
+                <p className="text-[11px] text-amber-700">
+                  Projeto congelado para auditoria histórica (Seção 3.3).
+                </p>
+              )}
+            </form>
+
             <div className="space-y-2 border-t border-slate-100 pt-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Alterar Status (Governança Seção 3.3)
+                Alterar Status (Ciclo de Vida)
               </p>
               <div className="grid grid-cols-2 gap-2">
                 {["Em Planejamento", "Em Execução", "Concluído", "Cancelado"].map((st) => (
                   <button
                     key={st}
                     type="button"
-                    disabled={isUpdatingStatus || actionProject.status === st}
+                    disabled={isViewer || isUpdatingStatus || actionProject.status === st}
                     onClick={() => updateProjectStatus(actionProject.id_projeto, st)}
-                    className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                    className={`rounded-lg border px-3 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
                       actionProject.status === st
                         ? "border-blue-600 bg-blue-50 text-blue-700"
                         : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -967,6 +1068,7 @@ export const CurrentProjectsSection = () => {
                 ))}
               </div>
             </div>
+
             <div className="flex flex-col gap-2 border-t border-slate-100 pt-3">
               <button
                 type="button"
@@ -977,14 +1079,25 @@ export const CurrentProjectsSection = () => {
               </button>
               <button
                 type="button"
-                onClick={() => exportProjectReport(actionProject)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                onClick={() => {
+                  const targetId = actionProject.id_projeto;
+                  setActionProject(null);
+                  setReportProjectId(targetId);
+                }}
+                className="w-full rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-semibold text-blue-800 hover:bg-blue-100"
               >
-                Exportar Memorial Descritivo (JSON) ⬇
+                Memorial & Orçamento (BOM / GeoJSON / PDF)
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {reportProjectId && (
+        <ProjectReportModal
+          projectId={reportProjectId}
+          onClose={() => setReportProjectId(null)}
+        />
       )}
     </main>
   );

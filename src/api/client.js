@@ -1,21 +1,9 @@
 /**
  * Camada de Comunicação HTTP e Gestão de Sessão JWT (Aulas 04, 05, 14 e 15).
- *
- * Responsabilidades:
- * - Anexar o cabeçalho `Authorization: Bearer <token>` em requisições autenticadas (Aula 15).
- * - Validar a integridade estrutural e a expiração (`exp`) do token JWT no cliente (Aula 15).
- * - Persistir os metadados não-sensíveis da sessão em chave padronizada no Web Storage (Aula 14).
- * - Limpar explicitamente o token no Logout com `removeStorageItem` (Aulas 14 e 15).
+ * Delega armazenamento por aba e inspeção JWT à classe ES6 `TabSessionManager`.
  */
 
-import {
-  STORAGE_KEYS,
-  decodeJwtPayload,
-  getStorageItem,
-  isJwtExpired,
-  removeStorageItem,
-  setStorageItem,
-} from "../utils/storage";
+import { sessionManager } from "../utils/sessionVault";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/$/, "");
 
@@ -75,29 +63,15 @@ export async function apiRequest(path, options = {}) {
 }
 
 export function getSession() {
-  const session =
-    getStorageItem(STORAGE_KEYS.AUTH_SESSION) ||
-    getStorageItem(STORAGE_KEYS.LEGACY_AUTH_SESSION);
-
-  if (!session) return null;
-
-  if (session.access_token && isJwtExpired(session.access_token)) {
-    clearSession();
-    return null;
-  }
-
-  const claims = session.access_token ? decodeJwtPayload(session.access_token) : null;
-  return claims ? { ...session, jwt_claims: claims } : session;
+  return sessionManager.getSession();
 }
 
-export function saveSession(session) {
-  setStorageItem(STORAGE_KEYS.AUTH_SESSION, session);
-  setStorageItem(STORAGE_KEYS.LEGACY_AUTH_SESSION, session);
+export function saveSession(session, options = {}) {
+  sessionManager.saveSession(session, options);
 }
 
 export function clearSession() {
-  removeStorageItem(STORAGE_KEYS.AUTH_SESSION);
-  removeStorageItem(STORAGE_KEYS.LEGACY_AUTH_SESSION);
+  sessionManager.clearSession();
 }
 
 export async function logoutSession() {
@@ -116,4 +90,3 @@ export async function logoutSession() {
   }
   clearSession();
 }
-

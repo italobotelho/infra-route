@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import CampoErro from "../../components/CampoErro";
+import { useToast } from "../../components/ToastProvider";
 import { apiRequest, saveSession } from "../../lib/api";
 import {
   STORAGE_KEYS,
@@ -24,8 +25,9 @@ import {
 
 export default function Cadastro() {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [form, setForm] = useState(() => {
-    const rascunho = getStorageItem(STORAGE_KEYS.FORM_CADASTRO, null);
+    const rascunho = getStorageItem(STORAGE_KEYS.CADASTRO_DRAFT, null);
     if (!rascunho || typeof rascunho !== "object") {
       return estadoInicial;
     }
@@ -38,6 +40,7 @@ export default function Cadastro() {
       termo: Boolean(rascunho.termo),
     };
   });
+  const [showPassword, setShowPassword] = useState(false);
   const [enviado, setEnviado] = useState(false);
   const [sucesso, setSucesso] = useState(false);
   const [tocados, setTocados] = useState({});
@@ -50,7 +53,7 @@ export default function Cadastro() {
 
   // Persiste apenas campos não sensíveis no rascunho (Aula 14: nunca salvar senha ou CPF)
   useEffect(() => {
-    setStorageItem(STORAGE_KEYS.FORM_CADASTRO, {
+    setStorageItem(STORAGE_KEYS.CADASTRO_DRAFT, {
       nome: form.nome,
       email: form.email,
       telefone: form.telefone,
@@ -99,7 +102,7 @@ export default function Cadastro() {
     setEnviado(false);
     setSucesso(false);
     setErroApi("");
-    removeStorageItem(STORAGE_KEYS.FORM_CADASTRO);
+    removeStorageItem(STORAGE_KEYS.CADASTRO_DRAFT);
   }
 
   function classeCampo(campo) {
@@ -132,9 +135,10 @@ export default function Cadastro() {
           crea: form.crea,
         }),
       });
-      removeStorageItem(STORAGE_KEYS.FORM_CADASTRO);
+      removeStorageItem(STORAGE_KEYS.CADASTRO_DRAFT);
       saveSession(session);
       setSucesso(true);
+      showToast("Conta criada! Confirme o código OTP exibido no painel.", { type: "success" });
       navigate("/projetos", { replace: true });
     } catch (error) {
       setErroApi(error.message);
@@ -320,22 +324,71 @@ export default function Cadastro() {
                   <label htmlFor="fsenha" className="text-sm font-semibold leading-5 text-slate-900">
                     Senha de acesso
                   </label>
-                  <input
-                    className={`h-12 w-full rounded-lg border bg-white px-4 text-sm text-slate-900 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 ${classeCampo("senha")}`}
-                    type="password"
-                    id="fsenha"
-                    name="fsenha"
-                    required
-                    minLength={6}
-                    autoComplete="new-password"
-                    placeholder="Mínimo de 6 caracteres"
-                    value={form.senha}
-                    aria-invalid={Boolean((tocados.senha || enviado) && erros.senha)}
-                    onChange={(e) => atualizar("senha", e.target.value)}
-                  />
-                  <p className="text-xs leading-5 text-slate-600">
-                    Força da senha: {form.senha ? forcaSenha : "não informada"}
-                  </p>
+                  <div className={`flex h-12 w-full items-center gap-2 rounded-lg border bg-white px-4 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100 ${classeCampo("senha")}`}>
+                    <input
+                      className="h-full min-w-0 flex-1 text-sm text-slate-900 placeholder:text-slate-500 focus:outline-none"
+                      type={showPassword ? "text" : "password"}
+                      id="fsenha"
+                      name="fsenha"
+                      required
+                      minLength={6}
+                      autoComplete="new-password"
+                      placeholder="Mínimo de 8 caracteres"
+                      value={form.senha}
+                      aria-invalid={Boolean((tocados.senha || enviado) && erros.senha)}
+                      onChange={(e) => atualizar("senha", e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      aria-pressed={showPassword}
+                      aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                      className="shrink-0 cursor-pointer rounded px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    >
+                      {showPassword ? "Ocultar" : "Mostrar"}
+                    </button>
+                  </div>
+                  {(() => {
+                    const regras = [
+                      { label: "8+ caracteres", ok: form.senha.length >= 8 },
+                      { label: "Maiúscula", ok: /[A-Z]/.test(form.senha) },
+                      { label: "Número", ok: /\d/.test(form.senha) },
+                      { label: "Símbolo", ok: /[^A-Za-z0-9]/.test(form.senha) },
+                    ];
+                    const pontos = regras.filter((r) => r.ok).length;
+                    const corAtiva =
+                      pontos <= 1
+                        ? "bg-red-500"
+                        : pontos === 2
+                          ? "bg-amber-500"
+                          : pontos === 3
+                            ? "bg-blue-500"
+                            : "bg-emerald-500";
+                    return (
+                      <div className="space-y-1.5">
+                        <div className="grid grid-cols-4 gap-1.5" aria-hidden="true">
+                          {[0, 1, 2, 3].map((idx) => (
+                            <span
+                              key={idx}
+                              className={`h-1.5 rounded-full transition-colors ${
+                                idx < pontos ? corAtiva : "bg-slate-200"
+                              }`}
+                            />
+                          ))}
+                        </div>
+                        <p className="text-xs leading-5 text-slate-600">
+                          Força da senha: <strong>{form.senha ? forcaSenha : "não informada"}</strong>
+                        </p>
+                        <ul className="m-0 flex flex-wrap list-none gap-x-3 gap-y-1 p-0 text-[11px]">
+                          {regras.map((r) => (
+                            <li key={r.label} className={r.ok ? "font-medium text-emerald-700" : "text-slate-500"}>
+                              {r.ok ? "✓" : "○"} {r.label}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })()}
                   <CampoErro>{(tocados.senha || enviado) && erros.senha}</CampoErro>
                 </div>
               </div>

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiRequest, saveSession } from "../../lib/api";
+import { DEMO_PERSONAS } from "../../utils/sessionVault";
+import { useToast } from "../../components/ToastProvider";
 
 const fields = [
   {
@@ -22,10 +24,12 @@ const fields = [
 
 export const CanvasBackground = () => {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [formValues, setFormValues] = useState({
     email: "",
     senha: "",
   });
+  const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -61,12 +65,18 @@ export const CanvasBackground = () => {
         body: JSON.stringify(formValues),
       });
       saveSession(session);
+      showToast(`Bem-vindo(a), ${session.nome}!`, { type: "success" });
       navigate("/projetos", { replace: true });
     } catch (error) {
       setMessage(error.message);
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const fillDemoUser = (email) => {
+    setFormValues({ email, senha: "123456" });
+    setMessage("");
   };
 
   return (
@@ -98,8 +108,7 @@ export const CanvasBackground = () => {
             PROJETOS <abbr title="Outside Plant (Planta Externa)">OSP</abbr>&nbsp;&nbsp;/&nbsp;&nbsp;TOPOLOGIA&nbsp;&nbsp;/&nbsp;&nbsp;ENGENHARIA
           </p>
           <p className="relative self-stretch text-base font-normal leading-6 tracking-[0] text-slate-300">
-            Gestão de projetos <abbr title="Outside Plant (Planta Externa)">OSP</abbr>, topologia de rede e assinaturas de
-            engenharia em um único ambiente.
+            Gestão de projetos <abbr title="Outside Plant (Planta Externa)">OSP</abbr>, topologia de rede via Algoritmo de Prim e governança multi-tenant em um único ambiente.
           </p>
         </div>
       </section>
@@ -109,7 +118,7 @@ export const CanvasBackground = () => {
       >
         <div className="relative flex w-full max-w-[480px] flex-col items-center">
           <form
-            className="relative flex w-full max-w-[480px] flex-col items-center gap-8 rounded-2xl border border-solid border-slate-200 bg-white p-6 shadow-[0px_8px_32px_#050a191a] sm:p-10"
+            className="relative flex w-full max-w-[480px] flex-col items-center gap-6 rounded-2xl border border-solid border-slate-200 bg-white p-6 shadow-[0px_8px_32px_#050a191a] sm:p-10"
             onSubmit={handleSubmit}
             noValidate={false}
           >
@@ -124,47 +133,52 @@ export const CanvasBackground = () => {
                 Acesso à Plataforma de Engenharia
               </p>
             </header>
-            <fieldset className="m-0 flex w-full flex-col items-center gap-6 self-stretch border-0 p-0">
+            <fieldset className="m-0 flex w-full flex-col items-center gap-5 self-stretch border-0 p-0">
               <legend className="sr-only">Credenciais de acesso</legend>
-              {fields.map((field) => (
-                <div
-                  className="relative flex w-full flex-col items-start gap-2 self-stretch"
-                  key={field.id}
-                >
-                  <label
-                    className="relative w-fit whitespace-nowrap text-sm font-semibold leading-5 tracking-[0] text-slate-900"
-                    htmlFor={field.id}
+              {fields.map((field) => {
+                const isPassword = field.id === "senha";
+                const resolvedType = isPassword && showPassword ? "text" : field.type;
+                return (
+                  <div
+                    className="relative flex w-full flex-col items-start gap-2 self-stretch"
+                    key={field.id}
                   >
-                    {field.label}
-                  </label>
-                  <div className="relative flex h-12 w-full items-center gap-3 self-stretch rounded-lg border border-solid border-slate-300 bg-white px-4 py-0 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100">
-                    <input
-                      className="relative h-full min-w-0 flex-1 text-sm font-normal leading-5 tracking-[0] text-slate-900 placeholder:text-slate-600 focus:outline-none"
-                      id={field.id}
-                      name={field.id}
-                      type={field.type}
-                      autoComplete={field.autoComplete}
-                      minLength={field.minLength}
-                      placeholder={field.placeholder}
-                      value={formValues[field.id]}
-                      onChange={handleChange}
-                      required
-                      aria-describedby={
-                        field.helperText ? `${field.id}-help` : undefined
-                      }
-                    />
-                  </div>
-                  {field.helperText ? (
-                    <p
-                      className="relative w-fit whitespace-nowrap text-xs font-normal leading-5 tracking-[0] text-slate-600"
-                      id={`${field.id}-help`}
+                    <label
+                      className="relative w-fit whitespace-nowrap text-sm font-semibold leading-5 tracking-[0] text-slate-900"
+                      htmlFor={field.id}
                     >
-                      {field.helperText}
-                    </p>
-                  ) : null}
-                </div>
-              ))}
+                      {field.label}
+                    </label>
+                    <div className="relative flex h-12 w-full items-center gap-2 self-stretch rounded-lg border border-solid border-slate-300 bg-white px-4 py-0 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100">
+                      <input
+                        className="relative h-full min-w-0 flex-1 text-sm font-normal leading-5 tracking-[0] text-slate-900 placeholder:text-slate-500 focus:outline-none"
+                        id={field.id}
+                        name={field.id}
+                        type={resolvedType}
+                        autoComplete={field.autoComplete}
+                        minLength={field.minLength}
+                        placeholder={field.placeholder}
+                        value={formValues[field.id]}
+                        onChange={handleChange}
+                        required
+                      />
+                      {isPassword && (
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword((prev) => !prev)}
+                          aria-pressed={showPassword}
+                          aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                          className="shrink-0 cursor-pointer rounded px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                        >
+                          {showPassword ? "Ocultar" : "Mostrar"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </fieldset>
+
             <div className="relative flex w-full flex-col items-start gap-2 self-stretch">
               <button
                 className="box-border flex min-h-12 w-full cursor-pointer items-center justify-center gap-2.5 self-stretch rounded-lg bg-blue-600 px-6 py-3 text-center text-sm font-semibold leading-6 tracking-[0] text-white transition-colors hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
@@ -174,28 +188,44 @@ export const CanvasBackground = () => {
                 {isSubmitting ? "Entrando na plataforma..." : "Entrar na Plataforma"}
               </button>
             </div>
-            <p className="text-sm text-red-600" role="alert" aria-live="polite">
-              {message}
-            </p>
+
+            {message && (
+              <p className="text-sm text-red-600" role="alert" aria-live="polite">
+                {message}
+              </p>
+            )}
+
             <p className="text-sm text-slate-600">
               Ainda não tem uma conta?{" "}
               <Link className="font-semibold text-blue-700 hover:underline" to="/cadastro">
                 Criar conta
               </Link>
             </p>
-            <button
-              type="button"
-              onClick={() => {
-                setFormValues({
-                  email: "engenheiro@empresa.com.br",
-                  senha: "123456",
-                });
-                setMessage("");
-              }}
-              className="cursor-pointer text-xs text-slate-500 hover:text-blue-700 hover:underline"
+
+            <section
+              aria-label="Perfis rápidos de demonstração"
+              className="flex w-full flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3"
             >
-              Demonstração (clique para preencher): engenheiro@empresa.com.br / 123456
-            </button>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                Preenchimento Rápido — {DEMO_PERSONAS.length} Perfis (senha: 123456)
+              </span>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {DEMO_PERSONAS.map((persona) => (
+                  <button
+                    key={persona.id}
+                    type="button"
+                    onClick={() => fillDemoUser(persona.email)}
+                    className="cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-medium text-slate-800 transition hover:border-blue-400 hover:bg-blue-50"
+                  >
+                    <strong className="block text-blue-700">{persona.nomeCurto}</strong>
+                    <span className="text-[10px] text-slate-500">{persona.descricao}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="m-0 text-[10px] text-slate-500">
+                Dica: cada aba mantém sessão própria ao trocar de perfil, ideal para testar permissões e logs em tempo real lado a lado.
+              </p>
+            </section>
           </form>
           <footer className="mt-6 text-center text-xs text-slate-500">
             <address className="not-italic">

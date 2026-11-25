@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { apiRequest, getSession } from "../../lib/api";
+import { LeafletMapCanvas } from "../../components/LeafletMapCanvas";
+import { LiveAuditDrawer } from "../../components/LiveAuditDrawer";
+import { ProjectReportModal } from "../../components/ProjectReportModal";
+import { QuickPersonaSwitcher } from "../../components/QuickPersonaSwitcher";
+import { ehPerfilSomenteLeituraProjetos } from "../../utils/sessionVault";
+import { useToast } from "../../components/ToastProvider";
 import {
   CEP_PATTERN,
   lookupCep as lookupCepService,
@@ -13,7 +19,10 @@ import {
 } from "../../utils/storage";
 import "./workspace-gis.css";
 
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
+const GOOGLE_MAPS_API_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "").trim();
+const HAS_VALID_GOOGLE_MAPS_KEY = Boolean(
+  GOOGLE_MAPS_API_KEY && GOOGLE_MAPS_API_KEY !== "SUA_CHAVE_AQUI",
+);
 
 // Junta nomes de classe, ignorando valores falsos.
 const cx = (...names) => names.filter(Boolean).join(" ");
@@ -156,6 +165,21 @@ function WorkspaceIcon({ name, className = "h-4 w-4" }) {
           <path d="M12 16.5h.01" />
         </svg>
       );
+    case "fit":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
+          <circle cx="12" cy="12" r="2.2" />
+        </svg>
+      );
+    case "history":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+          <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+          <path d="M3 3v5h5" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+      );
     default:
       return null;
   }
@@ -270,6 +294,12 @@ const layers = [
     enabled: true,
     bright: true,
   },
+  {
+    label: "Histórico Removidos (Soft Delete)",
+    icon: "history",
+    enabled: false,
+    bright: false,
+  },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -344,8 +374,9 @@ function createPoleElement() {
 
 // A aparência vem do CSS (.pole-marker, .pole-marker--selected e
 // [data-tool] para o cursor). Aqui atualizamos sigla, classes e atributos.
-function applyPoleStyle(element, { selected, tool, idTipoEquipamento, name }) {
+function applyPoleStyle(element, { selected, tool, idTipoEquipamento, name, isRemoved = false }) {
   element.classList.toggle("pole-marker--selected", selected);
+  element.classList.toggle("pole-marker--removed", isRemoved);
   element.dataset.tool = tool;
   const acronym =
     idTipoEquipamento === 1
@@ -366,7 +397,9 @@ function applyPoleStyle(element, { selected, tool, idTipoEquipamento, name }) {
         : idTipoEquipamento === 3
           ? "Switch / OLT Central Huawei · R$ 2.450,00"
           : "Poste de Passagem · R$ 0,00";
-  const tooltipText = `${name} (${typeDescription}) — Clique para inspecionar ou arraste para mover`;
+  const tooltipText = isRemoved
+    ? `${name} (Removido — Clique para restaurar)`
+    : `${name} (${typeDescription}) — Clique para inspecionar ou arraste para mover`;
   element.title = tooltipText;
   element.setAttribute("aria-label", tooltipText);
   if (idTipoEquipamento) {
@@ -446,7 +479,14 @@ function createPoleEntry(map, pole, handlersRef) {
   };
 
   element.addEventListener("pointerdown", (event) => {
-    if (handlersRef.current.tool !== "select" || event.button !== 0) return;
+    if (
+      handlersRef.current.tool !== "select" ||
+      handlersRef.current.isReadOnly ||
+      pole.isRemoved ||
+      event.button !== 0
+    ) {
+      return;
+    }
     const projection = overlay.getProjection();
     if (!projection) return;
     const pointer = containerPoint(event);
@@ -520,10 +560,12 @@ function createPoleEntry(map, pole, handlersRef) {
 function MapCanvas({
   map,
   tool,
+  isReadOnly = false,
   poles,
   trechos = [],
   selectedIds,
   selectedTrecho,
+  lassoStart = null,
   searchResult,
   onMapReady,
   onViewChange,
@@ -538,10 +580,11 @@ function MapCanvas({
   const markersRef = useRef({});
   const polylinesRef = useRef([]);
   const searchOverlayRef = useRef(null);
+  const lassoOverlayRef = useRef(null);
   const handlersRef = useRef({});
   const [error, setError] = useState("");
 
-  handlersRef.current = { tool, onMovePole, onSelectPole };
+  handlersRef.current = { tool, isReadOnly, onMovePole, onSelectPole };
 
   // Cria o mapa uma única vez.
   useEffect(() => {
@@ -549,21 +592,20 @@ function MapCanvas({
 
     const fail = (message) => {
       setError(message);
-      onStatusChange("error");
+      onStatusChange("fallback");
     };
 
     // O Google chama esta função quando a chave é recusada.
     window.gm_authFailure = () =>
       fail(
-        "O Google recusou a chave da API. Confira se a Maps JavaScript API está ativada e se as restrições de domínio permitem este endereço.",
+        "Chave Google Maps recusada — alternando para OpenStreetMap / Leaflet.",
       );
 
     (async () => {
       try {
-        if (!GOOGLE_MAPS_API_KEY) {
-          throw new Error(
-            "Chave não encontrada. Configure VITE_GOOGLE_MAPS_API_KEY ou GOOGLE_MAPS_API_KEY no arquivo .env.local na raiz do projeto e reinicie o Vite.",
-          );
+        if (!HAS_VALID_GOOGLE_MAPS_KEY) {
+          onStatusChange("fallback");
+          return;
         }
         await loadGoogleMaps(GOOGLE_MAPS_API_KEY);
         const { Map: GoogleMap } = await window.google.maps.importLibrary("maps");
@@ -604,15 +646,15 @@ function MapCanvas({
   // Cursor do mapa de acordo com a ferramenta.
   useEffect(() => {
     if (!map) return;
-    const isPlacementOrLasso = Boolean(TOOL_EQUIPMENT_CONFIG[tool]) || tool === "lasso";
+    const isPlacementOrLasso = (!isReadOnly && Boolean(TOOL_EQUIPMENT_CONFIG[tool])) || tool === "lasso";
     map.setOptions({ draggableCursor: isPlacementOrLasso ? "crosshair" : null });
-  }, [map, tool]);
+  }, [map, tool, isReadOnly]);
 
   // Clique no mapa: adiciona ativo (P, C, E, O), seleciona em caixa (L) ou limpa a seleção (V).
   useEffect(() => {
     if (!map) return;
     const listener = map.addListener("click", (event) => {
-      if (TOOL_EQUIPMENT_CONFIG[tool] && event.latLng) {
+      if (!isReadOnly && TOOL_EQUIPMENT_CONFIG[tool] && event.latLng) {
         onAddPole(event.latLng.toJSON(), tool);
       } else if (tool === "lasso" && event.latLng) {
         onAddPole(event.latLng.toJSON(), "lasso");
@@ -621,7 +663,7 @@ function MapCanvas({
       }
     });
     return () => listener.remove();
-  }, [map, tool, onAddPole, onClearSelection]);
+  }, [map, tool, isReadOnly, onAddPole, onClearSelection]);
 
   // Sincroniza os marcadores com o estado de postes.
   useEffect(() => {
@@ -654,6 +696,7 @@ function MapCanvas({
         tool,
         idTipoEquipamento: pole.id_tipo_equipamento,
         name: pole.name,
+        isRemoved: Boolean(pole.isRemoved),
       });
     });
   }, [map, poles, selectedIds, tool]);
@@ -738,14 +781,32 @@ function MapCanvas({
     }
   }, [map, searchResult]);
 
+  useEffect(() => {
+    if (!map) return;
+    if (lassoOverlayRef.current) {
+      lassoOverlayRef.current.setMap(null);
+      lassoOverlayRef.current = null;
+    }
+    if (!lassoStart) return;
+    const Overlay = getElementOverlayClass();
+    const element = document.createElement("div");
+    element.className = "lasso-pin";
+    element.title = "1º canto da área de seleção";
+    const overlay = new Overlay(lassoStart, element);
+    overlay.setMap(map);
+    lassoOverlayRef.current = overlay;
+  }, [map, lassoStart]);
+
   // Remove os marcadores ao desmontar.
   useEffect(() => {
     const registry = markersRef.current;
     const searchRef = searchOverlayRef;
+    const lassoRef = lassoOverlayRef;
     return () => {
       Object.values(registry).forEach(({ overlay }) => overlay.setMap(null));
       polylinesRef.current.forEach((line) => line.setMap(null));
       searchRef.current?.setMap(null);
+      lassoRef.current?.setMap(null);
     };
   }, []);
 
@@ -778,15 +839,19 @@ function MapCanvas({
 /* Barra de ferramentas                                                */
 /* ------------------------------------------------------------------ */
 
-function ToolButton({ tool, active, onSelect }) {
+function ToolButton({ tool, active, disabled = false, onSelect }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={() => onSelect(tool.id)}
       aria-pressed={active}
       aria-keyshortcuts={tool.shortcut.toUpperCase()}
-      title={tool.title}
-      className={cx("tool-button", active && "tool-button--active")}
+      title={disabled ? "Bloqueado no modo somente leitura" : tool.title}
+      className={cx(
+        "tool-button disabled:cursor-not-allowed disabled:opacity-40",
+        active && "tool-button--active",
+      )}
     >
       {tool.dotClass && (
         <span
@@ -806,7 +871,7 @@ function ToolButton({ tool, active, onSelect }) {
   );
 }
 
-function ToolBar({ selectedTool, onSelectTool, snapEnabled, onToggleSnap }) {
+function ToolBar({ selectedTool, isReadOnly = false, onSelectTool, snapEnabled, onToggleSnap }) {
   return (
     <nav
       className="toolbar"
@@ -825,31 +890,38 @@ function ToolBar({ selectedTool, onSelectTool, snapEnabled, onToggleSnap }) {
         <li aria-hidden="true">
           <span className="divider-vertical" />
         </li>
-        {toolItems.slice(2).map((tool) => (
-          <li key={tool.id}>
-            <ToolButton
-              tool={tool}
-              active={selectedTool === tool.id}
-              onSelect={onSelectTool}
-            />
-          </li>
-        ))}
+        {toolItems.slice(2).map((tool) => {
+          const isPlacement = Boolean(TOOL_EQUIPMENT_CONFIG[tool.id]);
+          return (
+            <li key={tool.id}>
+              <ToolButton
+                tool={tool}
+                active={selectedTool === tool.id}
+                disabled={isReadOnly && isPlacement}
+                onSelect={onSelectTool}
+              />
+            </li>
+          );
+        })}
         <li aria-hidden="true">
           <span className="divider-vertical" />
         </li>
         <li>
           <button
             type="button"
+            disabled={isReadOnly}
             onClick={onToggleSnap}
             aria-pressed={snapEnabled}
             aria-keyshortcuts="S"
             title={
-              snapEnabled
-                ? "Snap Viário ativado: os cabos acompanham o traçado das ruas (Atalho: S)"
-                : "Snap Viário desativado: cabos traçados em linha reta geodésica (Atalho: S)"
+              isReadOnly
+                ? "Modo somente leitura"
+                : snapEnabled
+                  ? "Snap Viário ativado: os cabos acompanham o traçado das ruas (Atalho: S)"
+                  : "Snap Viário desativado: cabos traçados em linha reta geodésica (Atalho: S)"
             }
             className={cx(
-              "tool-button",
+              "tool-button disabled:cursor-not-allowed disabled:opacity-40",
               snapEnabled && "tool-button--snap-on",
             )}
           >
@@ -868,9 +940,11 @@ function ToolBar({ selectedTool, onSelectTool, snapEnabled, onToggleSnap }) {
   );
 }
 
-function ToolHint({ tool, selectedCount, snapEnabled, lassoStart, cableOriginId }) {
+function ToolHint({ tool, isReadOnly = false, selectedCount, snapEnabled, lassoStart, cableOriginId }) {
   let text;
-  if (tool === "pole") {
+  if (isReadOnly) {
+    text = "Modo Somente Leitura (Auditoria / Visualizador): clique em qualquer ativo ou cabo para inspecionar";
+  } else if (tool === "pole") {
     text = (
       <>
         Clique no mapa para posicionar um Poste de passagem (R$ 0,00) · <kbd>Esc</kbd> para voltar
@@ -934,7 +1008,14 @@ function ToolHint({ tool, selectedCount, snapEnabled, lassoStart, cableOriginId 
 /* Painéis sobre o mapa                                                */
 /* ------------------------------------------------------------------ */
 
-function MapStats({ poles, distanceMeters, estimatedCost, savingsPercent }) {
+function MapStats({
+  poles,
+  distanceMeters,
+  estimatedCost,
+  custoCabos = 0,
+  custoEquipamentos = 0,
+  savingsPercent,
+}) {
   const purePoles = poles.filter((p) => !p.id_tipo_equipamento).length;
   const ctoCount = poles.filter((p) => p.id_tipo_equipamento === 1).length;
   const ceoCount = poles.filter((p) => p.id_tipo_equipamento === 2).length;
@@ -963,6 +1044,12 @@ function MapStats({ poles, distanceMeters, estimatedCost, savingsPercent }) {
         <strong className="map-stats__value">
           {estimatedCost.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
         </strong>
+        {(custoCabos > 0 || custoEquipamentos > 0) && (
+          <span className="text-[10px] text-slate-300">
+            Cabos: {custoCabos.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} · Equip.:{" "}
+            {custoEquipamentos.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+          </span>
+        )}
       </div>
       <span className="divider-vertical" aria-hidden="true" />
       <div className="map-stats__group map-stats__group--counts">
@@ -1005,7 +1092,7 @@ function MapStats({ poles, distanceMeters, estimatedCost, savingsPercent }) {
   );
 }
 
-function MapControls({ zoomLevel, onZoomIn, onZoomOut }) {
+function MapControls({ zoomLevel, onZoomIn, onZoomOut, onFitBounds }) {
   return (
     <>
       <div className="map-controls">
@@ -1017,6 +1104,15 @@ function MapControls({ zoomLevel, onZoomIn, onZoomOut }) {
             <WorkspaceIcon name="compass" className="h-4 w-4" />
           </span>
         </div>
+        <button
+          type="button"
+          onClick={onFitBounds}
+          className="map-controls__fit"
+          aria-label="Enquadrar toda a rede"
+          title="Enquadrar todos os ativos da rede no mapa"
+        >
+          <WorkspaceIcon name="fit" className="h-4 w-4" />
+        </button>
         <button
           type="button"
           onClick={onZoomIn}
@@ -1112,10 +1208,21 @@ function LayerSwitch({ layer, enabled, onToggle }) {
 }
 
 function Sidebar({
+  poles,
   poleCount,
   selectedCount,
   trechoCount,
+  isReadOnly = false,
+  canChangeStatus = false,
+  companyProjects = [],
+  currentProjectId,
+  onSwitchProject,
+  onChangeProjectStatus,
+  isUpdatingProjectStatus = false,
+  projectStatus,
   searchEnabled,
+  searchResult,
+  onInsertAtSearch,
   onSearch,
   onClearSearch,
   projectName,
@@ -1128,9 +1235,13 @@ function Sidebar({
   onCablePriceChange,
   maxSpan,
   onMaxSpanChange,
+  rootNodeId,
+  onRootNodeChange,
   snapEnabled,
   layerState,
   onToggleLayer,
+  onOpenGraphModal,
+  onOpenReportModal,
 }) {
   const [search, setSearch] = useState("");
   const [searchState, setSearchState] = useState({
@@ -1189,6 +1300,47 @@ function Sidebar({
             <h1 className="project__name">
               {projectName || "Carregando projeto..."}
             </h1>
+            {companyProjects.length > 1 && (
+              <div className="w-full pt-1">
+                <label htmlFor="switch-project" className="sr-only">
+                  Trocar projeto ativo
+                </label>
+                <select
+                  id="switch-project"
+                  value={String(currentProjectId || "")}
+                  onChange={(e) => onSwitchProject?.(Number(e.target.value))}
+                  className="h-8 w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 text-[11px] font-medium text-slate-200 focus:border-indigo-500 focus:outline-none"
+                >
+                  {companyProjects.map((proj) => (
+                    <option key={proj.id_projeto} value={String(proj.id_projeto)}>
+                      IR-{String(proj.id_projeto).padStart(4, "0")} · {proj.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="grid w-full grid-cols-2 gap-1.5 pt-1">
+              <div className="flex flex-col gap-0.5">
+                <label htmlFor="switch-project-status" className="sr-only">
+                  Status do projeto
+                </label>
+                <select
+                  id="switch-project-status"
+                  disabled={!canChangeStatus || isUpdatingProjectStatus || !projectStatus}
+                  value={projectStatus || "Em Planejamento"}
+                  onChange={(e) => onChangeProjectStatus?.(e.target.value)}
+                  className="h-7 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 text-[10px] font-medium text-slate-200 disabled:opacity-60"
+                >
+                  <option value="Em Planejamento">Em Planejamento</option>
+                  <option value="Em Execução">Em Execução</option>
+                  <option value="Concluído">Concluído</option>
+                  <option value="Cancelado">Cancelado</option>
+                </select>
+              </div>
+              <Link className="flex h-7 items-center justify-center rounded-lg border border-slate-700 bg-slate-900 px-2 text-[10px] font-medium text-indigo-300 hover:bg-slate-800 hover:text-indigo-200" to="/projetos">
+                ← Projetos
+              </Link>
+            </div>
             <div className="project__badges">
               <span className={cx("project__badge", snapEnabled && "project__badge--snap-on")}>
                 {snapEnabled ? "Traçado Viário (Snap ON)" : "Geodésico Direto (Snap OFF)"}
@@ -1197,14 +1349,19 @@ function Sidebar({
                 {poleCount} {poleCount === 1 ? "ativo" : "ativos"}
                 {selectedCount > 0 ? ` · ${selectedCount} sel.` : ""}
               </span>
+              {isReadOnly && (
+                <span className="project__badge border-amber-500/50 bg-amber-950/60 text-amber-300">
+                  🔒 {projectStatus || "Somente Leitura"}
+                </span>
+              )}
             </div>
-            <Link className="mt-1 text-xs text-indigo-400 hover:text-indigo-300 hover:underline" to="/projetos">
-              ← Voltar aos projetos
-            </Link>
           </div>
         </div>
         <div className="divider-horizontal" />
         <div className="sidebar__content">
+          <div className="w-full px-5 pt-3">
+            <QuickPersonaSwitcher variant="compact" />
+          </div>
           <form className="search" onSubmit={submitSearch} role="search">
             <label htmlFor="workspace-search" className="search__field">
               <span className="search__icon">
@@ -1232,6 +1389,15 @@ function Sidebar({
               >
                 {searchState.message}
               </p>
+            )}
+            {searchResult && !isReadOnly && (
+              <button
+                type="button"
+                onClick={onInsertAtSearch}
+                className="mt-2 w-full rounded-lg border border-amber-500/40 bg-amber-950/50 px-3 py-1.5 text-[11px] font-semibold text-amber-200 transition hover:bg-amber-900/60"
+              >
+                + Inserir ativo neste endereço
+              </button>
             )}
           </form>
           <div className="divider-horizontal" />
@@ -1359,6 +1525,30 @@ function Sidebar({
                   </span>
                 </label>
               </div>
+              <label htmlFor="root-node" className="field">
+                <span className="field__label">
+                  <span>Nó raiz / OLT inicial (Prim)</span>
+                </span>
+                <span className="field__wrap">
+                  <select
+                    id="root-node"
+                    name="rootNode"
+                    value={rootNodeId}
+                    onChange={(event) => onRootNodeChange(event.target.value)}
+                    className="field__control"
+                  >
+                    <option value="">Automático (primeiro ativo)</option>
+                    {poles.map((p) => (
+                      <option key={p.id} value={String(p.id)}>
+                        #{p.id} · {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="field__chevron">
+                    <WorkspaceIcon name="chevron-down" className="h-3.5 w-3.5" />
+                  </span>
+                </span>
+              </label>
             </fieldset>
           </section>
         </div>
@@ -1375,10 +1565,29 @@ function Sidebar({
             type="button"
             className="primary-button"
             onClick={() => onCalculate()}
-            disabled={!canCalculate || isCalculating}
+            disabled={!canCalculate || isCalculating || isReadOnly}
+            title={isReadOnly ? "Indisponível em modo somente leitura" : "Calcular Árvore Geradora Mínima"}
           >
             {isCalculating ? "Calculando..." : "Calcular Malha Otimizada ⚡"}
           </button>
+          <div className="grid w-full grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={onOpenGraphModal}
+              disabled={!canCalculate}
+              className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-2 text-[11px] font-medium text-slate-200 transition hover:bg-slate-800 disabled:opacity-40"
+            >
+              Inspecionar Grafo
+            </button>
+            <button
+              type="button"
+              onClick={onOpenReportModal}
+              disabled={!canCalculate}
+              className="rounded-lg border border-indigo-500/40 bg-indigo-950/60 px-2.5 py-2 text-[11px] font-semibold text-indigo-200 transition hover:bg-indigo-900/60 disabled:opacity-40"
+            >
+              Memorial & BOM
+            </button>
+          </div>
         </footer>
       </div>
     </aside>
@@ -1390,8 +1599,9 @@ function Sidebar({
 /* ------------------------------------------------------------------ */
 
 const STATUS_LABELS = {
-  loading: "Carregando Google Maps…",
-  ready: "Google Maps · conectado · Busca: © OpenStreetMap e ViaCEP",
+  loading: "Carregando mapa GIS…",
+  ready: "Mapa GIS conectado · Busca: © OpenStreetMap e ViaCEP",
+  fallback: "Alternando para OpenStreetMap / Leaflet…",
   error: "Mapa indisponível · veja a mensagem de erro no mapa",
 };
 
@@ -1406,10 +1616,14 @@ function isTypingTarget(target) {
 export const WorkspaceGis = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { showToast } = useToast();
   const session = getSession();
   const projectId = Number(searchParams.get("id_projeto"));
-  const savedWorkspaceConfig = getStorageItem(STORAGE_KEYS.CONFIG_WORKSPACE, null);
+  const savedWorkspaceConfig = getStorageItem(STORAGE_KEYS.WORKSPACE_CONFIG, null);
   const [map, setMap] = useState(null);
+  const [mapProvider, setMapProvider] = useState(
+    HAS_VALID_GOOGLE_MAPS_KEY ? "google" : "leaflet",
+  );
   const [status, setStatus] = useState("loading");
   const [view, setView] = useState({ zoom: DEFAULT_ZOOM, lat: MAP_CENTER.lat });
   const [tool, setTool] = useState("select");
@@ -1421,13 +1635,19 @@ export const WorkspaceGis = () => {
   const snapEnabledRef = useRef(snapEnabled);
   snapEnabledRef.current = snapEnabled;
   const [poles, setPoles] = useState([]);
+  const [removedPoles, setRemovedPoles] = useState([]);
   const [trechos, setTrechos] = useState([]);
+  const [adjacencyList, setAdjacencyList] = useState({});
   const [selectedIds, setSelectedIds] = useState([]);
   const [selectedTrecho, setSelectedTrecho] = useState(null);
   const [searchResult, setSearchResult] = useState(null);
   const [project, setProject] = useState(null);
+  const [companyProjects, setCompanyProjects] = useState([]);
+  const [isUpdatingProjectStatus, setIsUpdatingProjectStatus] = useState(false);
   const [distanceMeters, setDistanceMeters] = useState(0);
   const [estimatedCost, setEstimatedCost] = useState(0);
+  const [custoCabos, setCustoCabos] = useState(0);
+  const [custoEquipamentos, setCustoEquipamentos] = useState(0);
   const [savingsPercent, setSavingsPercent] = useState(0);
   const [cableType, setCableType] = useState(
     () => savedWorkspaceConfig?.cableType || "AS-80 12 FO",
@@ -1438,6 +1658,7 @@ export const WorkspaceGis = () => {
   const [maxSpan, setMaxSpan] = useState(
     () => savedWorkspaceConfig?.maxSpan ?? 2000,
   );
+  const [rootNodeId, setRootNodeId] = useState("");
   const [layerState, setLayerState] = useState(() =>
     Array.isArray(savedWorkspaceConfig?.layerState) &&
     savedWorkspaceConfig.layerState.length === layers.length
@@ -1447,9 +1668,20 @@ export const WorkspaceGis = () => {
   const [lassoStart, setLassoStart] = useState(null);
   const [cableOriginId, setCableOriginId] = useState(null);
   const [isGraphConnected, setIsGraphConnected] = useState(true);
-  const [requestError, setRequestError] = useState("");
   const [isCalculating, setIsCalculating] = useState(false);
   const [showQuickGuide, setShowQuickGuide] = useState(false);
+  const [showGraphModal, setShowGraphModal] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+
+  const [editDesc, setEditDesc] = useState("");
+  const [editEquip, setEditEquip] = useState("0");
+  const [editStatusFisico, setEditStatusFisico] = useState("Projetado");
+  const [isSavingInspector, setIsSavingInspector] = useState(false);
+
+  const isReadOnly =
+    ehPerfilSomenteLeituraProjetos(session?.nivel_acesso) ||
+    project?.status === "Concluído" ||
+    project?.status === "Cancelado";
 
   useEffect(() => {
     document.title = project?.nome
@@ -1457,9 +1689,8 @@ export const WorkspaceGis = () => {
       : "Workspace GIS | InfraRoute — Engenharia de Redes";
   }, [project?.nome]);
 
-  // Persiste preferências de interface não sensíveis (Aula 14)
   useEffect(() => {
-    setStorageItem(STORAGE_KEYS.CONFIG_WORKSPACE, {
+    setStorageItem(STORAGE_KEYS.WORKSPACE_CONFIG, {
       snapEnabled,
       cableType,
       cablePrice,
@@ -1474,11 +1705,23 @@ export const WorkspaceGis = () => {
     );
   }, []);
 
-  const visiblePoles = poles.filter((pole) => {
+  const showRemovedLayer = Boolean(layerState[3]);
+  const allDisplayablePoles = showRemovedLayer ? [...poles, ...removedPoles] : poles;
+  const visiblePoles = allDisplayablePoles.filter((pole) => {
+    if (pole.isRemoved) return true;
     if (!pole.id_tipo_equipamento) return layerState[0] !== false;
     return layerState[2] !== false;
   });
   const visibleTrechos = layerState[1] !== false ? trechos : [];
+
+  useEffect(() => {
+    if (selectedIds.length !== 1) return;
+    const target = allDisplayablePoles.find((p) => p.id === selectedIds[0]);
+    if (!target) return;
+    setEditDesc(target.name || "");
+    setEditEquip(target.id_tipo_equipamento ? String(target.id_tipo_equipamento) : "0");
+    setEditStatusFisico(target.status_fisico || "Projetado");
+  }, [selectedIds, poles, removedPoles]);
 
   const handleCableTypeChange = useCallback((nextType) => {
     setCableType(nextType);
@@ -1512,6 +1755,18 @@ export const WorkspaceGis = () => {
     return [customCable, ...fallbackCables];
   }, [cableType, cablePrice, maxSpan]);
 
+  const mapPointToUi = (point, isRemoved = false) => ({
+    id: point.id_ponto,
+    name: point.descricao,
+    lat: point.latitude,
+    lng: point.longitude,
+    status_fisico: point.status_fisico || "Projetado",
+    status_ponto: point.status_ponto || "Ativo",
+    id_tipo_equipamento: point.id_tipo_equipamento ?? null,
+    custo_equipamento: point.custo_equipamento ?? 0,
+    isRemoved,
+  });
+
   useEffect(() => {
     if (!Number.isInteger(projectId) || projectId <= 0) {
       navigate("/projetos", { replace: true });
@@ -1520,33 +1775,34 @@ export const WorkspaceGis = () => {
 
     let cancelled = false;
     const loadProject = async () => {
-      setRequestError("");
       try {
-        const result = await apiRequest(
-          `/projetos/${projectId}?id_usuario_autor=${session.id_usuario}`,
-        );
+        const [result, listRes] = await Promise.all([
+          apiRequest(`/projetos/${projectId}?id_usuario_autor=${session.id_usuario}`),
+          apiRequest(
+            `/projetos?id_empresa=${session?.nivel_acesso === "SuperAdmin" ? 0 : session.id_empresa_padrao}&id_usuario_autor=${session.id_usuario}`,
+          ).catch(() => []),
+        ]);
         if (cancelled) return;
+        setCompanyProjects(Array.isArray(listRes) ? listRes : []);
         const activePoints = (result.pontos || []).filter(
           (point) => point.status_ponto === "Ativo",
+        );
+        const deletedPoints = (result.pontos || []).filter(
+          (point) => point.status_ponto !== "Ativo",
         );
         setProject(result);
         setDistanceMeters(result.metragem_total);
         setEstimatedCost(result.custo_estimado);
         setTrechos(result.trechos || []);
-        setPoles(
-          activePoints.map((point) => ({
-            id: point.id_ponto,
-            name: point.descricao,
-            lat: point.latitude,
-            lng: point.longitude,
-            id_tipo_equipamento: point.id_tipo_equipamento ?? null,
-            custo_equipamento: point.custo_equipamento ?? 0,
-          })),
-        );
+        setPoles(activePoints.map((pt) => mapPointToUi(pt, false)));
+        setRemovedPoles(deletedPoints.map((pt) => mapPointToUi(pt, true)));
 
-        // Se o projeto abriu com Snap ON ativo mas os trechos salvos ainda estão em linha reta (2 vértices),
-        // ou para sincronizar economia_percentual e o traçado viário inicial automaticamente:
-        if (snapEnabledRef.current && activePoints.length >= 2) {
+        const projectIsReadOnly =
+          ehPerfilSomenteLeituraProjetos(session?.nivel_acesso) ||
+          result.status === "Concluído" ||
+          result.status === "Cancelado";
+
+        if (!projectIsReadOnly && snapEnabledRef.current && activePoints.length >= 2) {
           const mstResult = await apiRequest(
             `/projetos/${projectId}/mst?id_usuario_autor=${session.id_usuario}`,
             {
@@ -1560,13 +1816,16 @@ export const WorkspaceGis = () => {
           if (!cancelled) {
             setDistanceMeters(mstResult.metragem_total);
             setEstimatedCost(mstResult.custo_estimado);
+            setCustoCabos(mstResult.custo_total_cabos ?? 0);
+            setCustoEquipamentos(mstResult.custo_total_equipamentos ?? 0);
             setSavingsPercent(mstResult.economia_percentual ?? 0);
             setIsGraphConnected(mstResult.grafo_conexo !== false);
             setTrechos(mstResult.trechos_mst || []);
+            setAdjacencyList(mstResult.lista_adjacencia || {});
           }
         }
       } catch (error) {
-        if (!cancelled) setRequestError(error.message);
+        if (!cancelled) showToast(error.message, { type: "error" });
       }
     };
 
@@ -1574,23 +1833,94 @@ export const WorkspaceGis = () => {
     return () => {
       cancelled = true;
     };
-  }, [projectId, session.id_usuario, navigate]);
+  }, [projectId, session.id_usuario, session.id_empresa_padrao, session?.nivel_acesso, navigate, showToast]);
+
+  const handleChangeProjectStatus = useCallback(
+    async (novoStatus) => {
+      if (!project || ehPerfilSomenteLeituraProjetos(session?.nivel_acesso) || novoStatus === project.status) return;
+      setIsUpdatingProjectStatus(true);
+      try {
+        const updated = await apiRequest(`/projetos/${projectId}/status`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            novo_status: novoStatus,
+            id_usuario_autor: session.id_usuario,
+          }),
+        });
+        setProject((curr) => (curr ? { ...curr, status: updated.status } : curr));
+        setCompanyProjects((curr) =>
+          curr.map((p) => (p.id_projeto === projectId ? { ...p, status: updated.status } : p)),
+        );
+        showToast(`Status do projeto alterado para "${updated.status}".`, { type: "success" });
+      } catch (err) {
+        showToast(err.message, { type: "error" });
+      } finally {
+        setIsUpdatingProjectStatus(false);
+      }
+    },
+    [project, projectId, session.id_usuario, session?.nivel_acesso, showToast],
+  );
+
+  const fitNetworkBounds = useCallback(
+    (targetPoles = poles) => {
+      if (!map || !targetPoles.length) return;
+      if (targetPoles.length === 1) {
+        map.setCenter({ lat: targetPoles[0].lat, lng: targetPoles[0].lng });
+        return;
+      }
+      let south = 90;
+      let north = -90;
+      let west = 180;
+      let east = -180;
+      targetPoles.forEach((p) => {
+        if (p.lat < south) south = p.lat;
+        if (p.lat > north) north = p.lat;
+        if (p.lng < west) west = p.lng;
+        if (p.lng > east) east = p.lng;
+      });
+      map.fitBounds({ south, north, west, east });
+    },
+    [map, poles],
+  );
 
   useEffect(() => {
     if (!map || !project?.pontos?.length) return;
-    const activePoint = project.pontos.find((p) => p.status_ponto === "Ativo") || project.pontos[0];
-    map.setCenter({ lat: activePoint.latitude, lng: activePoint.longitude });
+    const activePts = project.pontos
+      .filter((p) => p.status_ponto === "Ativo")
+      .map((p) => ({ lat: p.latitude, lng: p.longitude }));
+    if (activePts.length >= 2) {
+      let south = 90;
+      let north = -90;
+      let west = 180;
+      let east = -180;
+      activePts.forEach((p) => {
+        if (p.lat < south) south = p.lat;
+        if (p.lat > north) north = p.lat;
+        if (p.lng < west) west = p.lng;
+        if (p.lng > east) east = p.lng;
+      });
+      map.fitBounds({ south, north, west, east });
+    } else if (activePts.length === 1) {
+      map.setCenter(activePts[0]);
+    }
   }, [map, project?.id_projeto]);
 
-  const selectTool = useCallback((toolId) => {
-    setTool(toolId);
-    setLassoStart(null);
-    setCableOriginId(null);
-    if (toolId !== "select") {
-      setSelectedIds([]);
-      setSelectedTrecho(null);
-    }
-  }, []);
+  const selectTool = useCallback(
+    (toolId) => {
+      if (isReadOnly && Boolean(TOOL_EQUIPMENT_CONFIG[toolId])) {
+        showToast("Ferramenta bloqueada no modo somente leitura.", { type: "warning" });
+        return;
+      }
+      setTool(toolId);
+      setLassoStart(null);
+      setCableOriginId(null);
+      if (toolId !== "select") {
+        setSelectedIds([]);
+        setSelectedTrecho(null);
+      }
+    },
+    [isReadOnly, showToast],
+  );
 
   const addPole = useCallback(async ({ lat, lng }, activeTool = "pole") => {
     if (activeTool === "lasso") {
@@ -1612,8 +1942,7 @@ export const WorkspaceGis = () => {
       return;
     }
 
-    if (!project) return;
-    setRequestError("");
+    if (!project || isReadOnly) return;
     const equipConfig = TOOL_EQUIPMENT_CONFIG[activeTool] || TOOL_EQUIPMENT_CONFIG.pole;
     try {
       const point = await apiRequest(`/projetos/${projectId}/pontos`, {
@@ -1627,23 +1956,14 @@ export const WorkspaceGis = () => {
           id_usuario_autor: session.id_usuario,
         }),
       });
-      setPoles((current) => [
-        ...current,
-        {
-          id: point.id_ponto,
-          name: point.descricao,
-          lat: point.latitude,
-          lng: point.longitude,
-          id_tipo_equipamento: point.id_tipo_equipamento ?? null,
-          custo_equipamento: point.custo_equipamento ?? 0,
-        },
-      ]);
+      setPoles((current) => [...current, mapPointToUi(point, false)]);
       if (trechos.length > 0 && poles.length + 1 >= 2) {
         const mstResult = await apiRequest(
           `/projetos/${projectId}/mst?id_usuario_autor=${session.id_usuario}`,
           {
             method: "POST",
             body: JSON.stringify({
+              no_inicial_id: rootNodeId ? Number(rootNodeId) : null,
               catalogo_cabos: buildCatalogoCabosPayload(),
               ajustar_malha_viaria: snapEnabledRef.current,
             }),
@@ -1651,22 +1971,25 @@ export const WorkspaceGis = () => {
         );
         setDistanceMeters(mstResult.metragem_total);
         setEstimatedCost(mstResult.custo_estimado);
+        setCustoCabos(mstResult.custo_total_cabos ?? 0);
+        setCustoEquipamentos(mstResult.custo_total_equipamentos ?? 0);
         setSavingsPercent(mstResult.economia_percentual ?? 0);
         setIsGraphConnected(mstResult.grafo_conexo !== false);
         setTrechos(mstResult.trechos_mst || []);
+        setAdjacencyList(mstResult.lista_adjacencia || {});
       }
     } catch (error) {
-      setRequestError(error.message);
+      showToast(error.message, { type: "error" });
     }
-  }, [poles, project, projectId, session.id_usuario, lassoStart, trechos.length, buildCatalogoCabosPayload]);
+  }, [poles, project, isReadOnly, projectId, session.id_usuario, lassoStart, trechos.length, rootNodeId, buildCatalogoCabosPayload, showToast]);
 
   const movePole = useCallback(async (id, { lat, lng }) => {
+    if (isReadOnly) return;
     const previousPosition = poles.find((pole) => pole.id === id);
-    if (!previousPosition) return;
+    if (!previousPosition || previousPosition.isRemoved) return;
     setPoles((current) =>
       current.map((pole) => (pole.id === id ? { ...pole, lat, lng } : pole)),
     );
-    setRequestError("");
     try {
       await apiRequest(`/projetos/${projectId}/pontos/${id}`, {
         method: "PATCH",
@@ -1683,6 +2006,7 @@ export const WorkspaceGis = () => {
           {
             method: "POST",
             body: JSON.stringify({
+              no_inicial_id: rootNodeId ? Number(rootNodeId) : null,
               catalogo_cabos: catalogoCabos,
               ajustar_malha_viaria: snapEnabled,
             }),
@@ -1690,8 +2014,11 @@ export const WorkspaceGis = () => {
         );
         setDistanceMeters(mstResult.metragem_total);
         setEstimatedCost(mstResult.custo_estimado);
+        setCustoCabos(mstResult.custo_total_cabos ?? 0);
+        setCustoEquipamentos(mstResult.custo_total_equipamentos ?? 0);
         setSavingsPercent(mstResult.economia_percentual ?? 0);
         setTrechos(mstResult.trechos_mst || []);
+        setAdjacencyList(mstResult.lista_adjacencia || {});
       }
     } catch (error) {
       setPoles((current) => current.map((pole) => (
@@ -1699,9 +2026,9 @@ export const WorkspaceGis = () => {
           ? { ...pole, lat: previousPosition.lat, lng: previousPosition.lng }
           : pole
       )));
-      setRequestError(error.message);
+      showToast(error.message, { type: "error" });
     }
-  }, [poles, projectId, session.id_usuario, trechos.length, buildCatalogoCabosPayload, snapEnabled]);
+  }, [poles, isReadOnly, projectId, session.id_usuario, trechos.length, rootNodeId, buildCatalogoCabosPayload, snapEnabled, showToast]);
 
   const selectPole = useCallback((id, additive) => {
     if (tool === "cable") {
@@ -1741,10 +2068,10 @@ export const WorkspaceGis = () => {
   }, []);
 
   const calculateTopology = useCallback(async (overrideSnap) => {
+    if (isReadOnly) return;
     const useStreetSnap =
       typeof overrideSnap === "boolean" ? overrideSnap : snapEnabledRef.current;
     setIsCalculating(true);
-    setRequestError("");
     try {
       const catalogoCabos = buildCatalogoCabosPayload();
       const result = await apiRequest(
@@ -1752,6 +2079,7 @@ export const WorkspaceGis = () => {
         {
           method: "POST",
           body: JSON.stringify({
+            no_inicial_id: rootNodeId ? Number(rootNodeId) : null,
             catalogo_cabos: catalogoCabos,
             ajustar_malha_viaria: useStreetSnap,
           }),
@@ -1760,36 +2088,43 @@ export const WorkspaceGis = () => {
 
       setDistanceMeters(result.metragem_total);
       setEstimatedCost(result.custo_estimado);
+      setCustoCabos(result.custo_total_cabos ?? 0);
+      setCustoEquipamentos(result.custo_total_equipamentos ?? 0);
       setSavingsPercent(result.economia_percentual ?? 0);
       setIsGraphConnected(result.grafo_conexo !== false);
       setTrechos(result.trechos_mst || []);
+      setAdjacencyList(result.lista_adjacencia || {});
       setSelectedTrecho(null);
       setProject((current) => current ? {
         ...current,
         metragem_total: result.metragem_total,
         custo_estimado: result.custo_estimado,
       } : current);
+      showToast("Malha óptica recalculada (Algoritmo de Prim).", { type: "success" });
     } catch (error) {
-      setRequestError(error.message);
+      showToast(error.message, { type: "error" });
     } finally {
       setIsCalculating(false);
     }
-  }, [projectId, session.id_usuario, buildCatalogoCabosPayload]);
+  }, [isReadOnly, projectId, session.id_usuario, rootNodeId, buildCatalogoCabosPayload, showToast]);
 
   const handleToggleSnap = useCallback(() => {
+    if (isReadOnly) return;
     const nextSnap = !snapEnabledRef.current;
     snapEnabledRef.current = nextSnap;
     setSnapEnabled(nextSnap);
     if (trechos.length > 0 && poles.length >= 2) {
       calculateTopology(nextSnap);
     }
-  }, [trechos.length, poles.length, calculateTopology]);
+  }, [isReadOnly, trechos.length, poles.length, calculateTopology]);
 
   const removeSelectedPoles = useCallback(async (ids) => {
-    setRequestError("");
+    if (isReadOnly) return;
+    const removable = poles.filter((p) => ids.includes(p.id));
+    if (!removable.length) return;
     try {
-      await Promise.all(ids.map((id) => apiRequest(
-        `/projetos/${projectId}/pontos/${id}/soft-delete`,
+      await Promise.all(removable.map((pt) => apiRequest(
+        `/projetos/${projectId}/pontos/${pt.id}/soft-delete`,
         {
           method: "PATCH",
           body: JSON.stringify({
@@ -1805,6 +2140,7 @@ export const WorkspaceGis = () => {
         {
           method: "POST",
           body: JSON.stringify({
+            no_inicial_id: rootNodeId ? Number(rootNodeId) : null,
             catalogo_cabos: catalogoCabos,
             ajustar_malha_viaria: snapEnabled,
           }),
@@ -1812,15 +2148,101 @@ export const WorkspaceGis = () => {
       );
       setDistanceMeters(result.metragem_total);
       setEstimatedCost(result.custo_estimado);
+      setCustoCabos(result.custo_total_cabos ?? 0);
+      setCustoEquipamentos(result.custo_total_equipamentos ?? 0);
       setSavingsPercent(result.economia_percentual ?? 0);
       setTrechos(result.trechos_mst || []);
+      setAdjacencyList(result.lista_adjacencia || {});
       setPoles((current) => current.filter((pole) => !ids.includes(pole.id)));
+      setRemovedPoles((current) => [
+        ...current,
+        ...removable.map((pt) => ({ ...pt, status_ponto: "Removido", isRemoved: true })),
+      ]);
       setSelectedIds([]);
       setSelectedTrecho(null);
+      showToast(`${removable.length} ativo(s) movido(s) para o histórico (Soft Delete).`, {
+        type: "info",
+      });
     } catch (error) {
-      setRequestError(error.message);
+      showToast(error.message, { type: "error" });
     }
-  }, [projectId, session.id_usuario, buildCatalogoCabosPayload, snapEnabled]);
+  }, [isReadOnly, poles, projectId, session.id_usuario, rootNodeId, buildCatalogoCabosPayload, snapEnabled, showToast]);
+
+  const saveInspectorEdits = useCallback(async (event, poleId) => {
+    event.preventDefault();
+    if (isReadOnly || !editDesc.trim()) return;
+    setIsSavingInspector(true);
+    try {
+      const equipNum = Number(editEquip);
+      const updated = await apiRequest(`/projetos/${projectId}/pontos/${poleId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          descricao: editDesc.trim(),
+          status_fisico: editStatusFisico,
+          id_tipo_equipamento: equipNum > 0 ? equipNum : null,
+          atualizar_tipo_equipamento: true,
+          id_usuario_autor: session.id_usuario,
+        }),
+      });
+      setPoles((current) =>
+        current.map((p) => (p.id === poleId ? mapPointToUi(updated, false) : p)),
+      );
+      if (trechos.length > 0 && poles.length >= 2) {
+        const result = await apiRequest(
+          `/projetos/${projectId}/mst?id_usuario_autor=${session.id_usuario}`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              no_inicial_id: rootNodeId ? Number(rootNodeId) : null,
+              catalogo_cabos: buildCatalogoCabosPayload(),
+              ajustar_malha_viaria: snapEnabled,
+            }),
+          },
+        );
+        setDistanceMeters(result.metragem_total);
+        setEstimatedCost(result.custo_estimado);
+        setCustoCabos(result.custo_total_cabos ?? 0);
+        setCustoEquipamentos(result.custo_total_equipamentos ?? 0);
+        setTrechos(result.trechos_mst || []);
+        setAdjacencyList(result.lista_adjacencia || {});
+      }
+      showToast(`Ativo "${updated.descricao}" atualizado.`, { type: "success" });
+    } catch (error) {
+      showToast(error.message, { type: "error" });
+    } finally {
+      setIsSavingInspector(false);
+    }
+  }, [isReadOnly, editDesc, editEquip, editStatusFisico, projectId, session.id_usuario, trechos.length, poles.length, rootNodeId, buildCatalogoCabosPayload, snapEnabled, showToast]);
+
+  const restoreRemovedPole = useCallback(async (poleId) => {
+    if (isReadOnly) return;
+    try {
+      const restored = await apiRequest(
+        `/projetos/${projectId}/pontos/${poleId}/soft-delete`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            novo_status_ponto: "Ativo",
+            forcar_recalculo_mst: false,
+            id_usuario_autor: session.id_usuario,
+          }),
+        },
+      );
+      setRemovedPoles((current) => current.filter((p) => p.id !== poleId));
+      setPoles((current) => [...current, mapPointToUi(restored, false)]);
+      setSelectedIds([poleId]);
+      showToast(`Ativo "${restored.descricao}" restaurado à malha ativa.`, { type: "success" });
+    } catch (error) {
+      showToast(error.message, { type: "error" });
+    }
+  }, [isReadOnly, projectId, session.id_usuario, showToast]);
+
+  const handleInsertAtSearch = useCallback(() => {
+    if (!searchResult || isReadOnly) return;
+    const chosenTool = TOOL_EQUIPMENT_CONFIG[tool] ? tool : "pole";
+    addPole({ lat: searchResult.lat, lng: searchResult.lng }, chosenTool);
+    showToast("Ativo inserido na coordenada encontrada.", { type: "success" });
+  }, [searchResult, isReadOnly, tool, addPole, showToast]);
 
   const searchAddress = useCallback(
     async (query) => {
@@ -1934,33 +2356,69 @@ export const WorkspaceGis = () => {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [selectedIds, selectTool, removeSelectedPoles, handleToggleSnap]);
 
+  const handleMapStatusChange = useCallback((nextStatus) => {
+    if (nextStatus === "fallback") {
+      setMapProvider("leaflet");
+      setMap(null);
+      setStatus("loading");
+      return;
+    }
+    setStatus(nextStatus);
+  }, []);
+
   return (
     <main
       className="workspace"
       data-infraroute-02-sem-nticos-mode="modo-escuro"
     >
-      <MapCanvas
-        map={map}
-        tool={tool}
-        poles={visiblePoles}
-        trechos={visibleTrechos}
-        selectedIds={selectedIds}
-        selectedTrecho={selectedTrecho}
-        searchResult={searchResult}
-        onMapReady={setMap}
-        onViewChange={setView}
-        onStatusChange={setStatus}
-        onAddPole={addPole}
-        onMovePole={movePole}
-        onSelectPole={selectPole}
-        onSelectTrecho={setSelectedTrecho}
-        onClearSelection={clearSelection}
-      />
+      {mapProvider === "google" ? (
+        <MapCanvas
+          map={map}
+          tool={tool}
+          isReadOnly={isReadOnly}
+          poles={visiblePoles}
+          trechos={visibleTrechos}
+          selectedIds={selectedIds}
+          selectedTrecho={selectedTrecho}
+          lassoStart={lassoStart}
+          searchResult={searchResult}
+          onMapReady={setMap}
+          onViewChange={setView}
+          onStatusChange={handleMapStatusChange}
+          onAddPole={addPole}
+          onMovePole={movePole}
+          onSelectPole={selectPole}
+          onSelectTrecho={setSelectedTrecho}
+          onClearSelection={clearSelection}
+        />
+      ) : (
+        <LeafletMapCanvas
+          center={MAP_CENTER}
+          defaultZoom={DEFAULT_ZOOM}
+          tool={tool}
+          isReadOnly={isReadOnly}
+          poles={visiblePoles}
+          trechos={visibleTrechos}
+          selectedIds={selectedIds}
+          selectedTrecho={selectedTrecho}
+          lassoStart={lassoStart}
+          searchResult={searchResult}
+          onMapReady={setMap}
+          onViewChange={setView}
+          onStatusChange={handleMapStatusChange}
+          onAddPole={addPole}
+          onMovePole={movePole}
+          onSelectPole={selectPole}
+          onSelectTrecho={setSelectedTrecho}
+          onClearSelection={clearSelection}
+        />
+      )}
       {/* Camada de interface: só os controles capturam o mouse; o resto deixa o clique passar para o mapa. */}
       <div className="workspace__overlay">
         <div className="toolbar-zone">
           <ToolBar
             selectedTool={tool}
+            isReadOnly={isReadOnly}
             onSelectTool={selectTool}
             snapEnabled={snapEnabled}
             onToggleSnap={handleToggleSnap}
@@ -1968,6 +2426,7 @@ export const WorkspaceGis = () => {
           {status === "ready" && (
             <ToolHint
               tool={tool}
+              isReadOnly={isReadOnly}
               selectedCount={selectedIds.length}
               snapEnabled={snapEnabled}
               lassoStart={lassoStart}
@@ -2019,6 +2478,7 @@ export const WorkspaceGis = () => {
             </aside>
           )}
         </div>
+        <LiveAuditDrawer placement="workspace-top-right" />
         {!isGraphConnected && poles.length >= 2 && (
           <div
             role="alert"
@@ -2028,19 +2488,12 @@ export const WorkspaceGis = () => {
           </div>
         )}
         {selectedIds.length > 0 && !selectedTrecho && (() => {
-          const selectedPolesList = poles.filter((p) => selectedIds.includes(p.id));
+          const selectedPolesList = allDisplayablePoles.filter((p) => selectedIds.includes(p.id));
           const firstPole = selectedPolesList[0];
-          const equipLabel =
-            firstPole?.id_tipo_equipamento === 1
-              ? "Caixa CTO Furukawa"
-              : firstPole?.id_tipo_equipamento === 2
-                ? "Caixa de Emenda CEO Furukawa"
-                : firstPole?.id_tipo_equipamento === 3
-                  ? "Switch / OLT Huawei"
-                  : "Poste de Passagem (Apoio)";
+          if (!firstPole) return null;
           return (
             <aside
-              className="pointer-events-auto absolute top-28 right-6 z-20 flex w-72 flex-col gap-2 rounded-xl border border-slate-700 bg-slate-900/95 p-4 text-xs text-slate-200 shadow-2xl"
+              className="pointer-events-auto absolute top-28 right-6 z-20 flex w-80 flex-col gap-2.5 rounded-xl border border-slate-700 bg-slate-900/95 p-4 text-xs text-slate-200 shadow-2xl backdrop-blur-md"
               aria-label="Detalhes do ativo selecionado"
             >
               <div className="flex items-center justify-between">
@@ -2058,32 +2511,124 @@ export const WorkspaceGis = () => {
                   ✕
                 </button>
               </div>
-              {selectedPolesList.length === 1 && firstPole && (
-                <>
-                  <p className="text-[11px] text-slate-300">
-                    Tipo: <strong>{equipLabel}</strong>
-                  </p>
-                  <div className="flex items-center justify-between border-t border-slate-800 pt-2">
-                    <span>Custo Unit.: <strong className="text-emerald-400">{Number(firstPole.custo_equipamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong></span>
-                    <span className="text-[10px] text-slate-400">{firstPole.lat.toFixed(5)}, {firstPole.lng.toFixed(5)}</span>
+              {selectedPolesList.length === 1 && (
+                firstPole.isRemoved ? (
+                  <div className="space-y-2 border-t border-slate-800 pt-2">
+                    <p className="rounded bg-rose-950/60 px-2.5 py-1.5 text-[11px] text-rose-200">
+                      Status no projeto: <strong>Removido (Soft Delete)</strong>
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Coordenadas: {firstPole.lat.toFixed(5)}, {firstPole.lng.toFixed(5)}
+                    </p>
+                    {!isReadOnly && (
+                      <button
+                        type="button"
+                        onClick={() => restoreRemovedPole(firstPole.id)}
+                        className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-500"
+                      >
+                        Restaurar Ativo na Rede ↺
+                      </button>
+                    )}
                   </div>
-                </>
-              )}
-              <button
-                type="button"
-                onClick={() => removeSelectedPoles(selectedIds)}
-                className="mt-1 w-full rounded-lg bg-red-600/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500"
-              >
-                {selectedPolesList.length === 1 ? (
-                  <>
-                    Remover Ativo Selecionado (<kbd>Del</kbd>)
-                  </>
                 ) : (
-                  <>
-                    Remover {selectedPolesList.length} Ativos (<kbd>Del</kbd>)
-                  </>
-                )}
-              </button>
+                  <form
+                    onSubmit={(e) => saveInspectorEdits(e, firstPole.id)}
+                    className="space-y-2.5 border-t border-slate-800 pt-2.5"
+                  >
+                    <div className="flex flex-col gap-1">
+                      <label htmlFor="inspector-desc" className="text-[10px] font-semibold uppercase text-slate-400">
+                        Descrição técnica
+                      </label>
+                      <input
+                        id="inspector-desc"
+                        type="text"
+                        required
+                        maxLength={255}
+                        disabled={isReadOnly || isSavingInspector}
+                        value={editDesc}
+                        onChange={(e) => setEditDesc(e.target.value)}
+                        className="h-8 rounded-lg border border-slate-700 bg-slate-950 px-2.5 text-xs text-slate-100 disabled:opacity-60"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="flex flex-col gap-1">
+                        <label htmlFor="inspector-equip" className="text-[10px] font-semibold uppercase text-slate-400">
+                          Equipamento
+                        </label>
+                        <select
+                          id="inspector-equip"
+                          disabled={isReadOnly || isSavingInspector}
+                          value={editEquip}
+                          onChange={(e) => setEditEquip(e.target.value)}
+                          className="h-8 rounded-lg border border-slate-700 bg-slate-950 px-2 text-[11px] text-slate-100 disabled:opacity-60"
+                        >
+                          <option value="0">Poste (R$ 0)</option>
+                          <option value="1">CTO Furukawa (R$ 380)</option>
+                          <option value="2">CEO Furukawa (R$ 520)</option>
+                          <option value="3">OLT Huawei (R$ 2.450)</option>
+                        </select>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label htmlFor="inspector-status" className="text-[10px] font-semibold uppercase text-slate-400">
+                          Status Físico
+                        </label>
+                        <select
+                          id="inspector-status"
+                          disabled={isReadOnly || isSavingInspector}
+                          value={editStatusFisico}
+                          onChange={(e) => setEditStatusFisico(e.target.value)}
+                          className="h-8 rounded-lg border border-slate-700 bg-slate-950 px-2 text-[11px] text-slate-100 disabled:opacity-60"
+                        >
+                          <option value="Projetado">Projetado</option>
+                          <option value="Instalado">Instalado</option>
+                          <option value="Em Manutenção">Em Manutenção</option>
+                          <option value="Desativado">Desativado</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400">
+                      <span>
+                        Custo:{" "}
+                        <strong className="text-emerald-400">
+                          {Number(firstPole.custo_equipamento || 0).toLocaleString("pt-BR", {
+                            style: "currency",
+                            currency: "BRL",
+                          })}
+                        </strong>
+                      </span>
+                      <span className="text-[10px]">
+                        {firstPole.lat.toFixed(5)}, {firstPole.lng.toFixed(5)}
+                      </span>
+                    </div>
+                    {!isReadOnly && (
+                      <button
+                        type="submit"
+                        disabled={isSavingInspector || !editDesc.trim()}
+                        className="w-full rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+                      >
+                        {isSavingInspector ? "Salvando..." : "Salvar Alterações"}
+                      </button>
+                    )}
+                  </form>
+                )
+              )}
+              {!isReadOnly && selectedPolesList.some((p) => !p.isRemoved) && (
+                <button
+                  type="button"
+                  onClick={() => removeSelectedPoles(selectedIds)}
+                  className="mt-0.5 w-full rounded-lg bg-red-600/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500"
+                >
+                  {selectedPolesList.length === 1 ? (
+                    <>
+                      Remover Ativo (<kbd>Del</kbd>)
+                    </>
+                  ) : (
+                    <>
+                      Remover {selectedPolesList.length} Ativos (<kbd>Del</kbd>)
+                    </>
+                  )}
+                </button>
+              )}
             </aside>
           );
         })()}
@@ -2123,23 +2668,39 @@ export const WorkspaceGis = () => {
           poles={poles}
           distanceMeters={distanceMeters}
           estimatedCost={estimatedCost}
+          custoCabos={custoCabos}
+          custoEquipamentos={custoEquipamentos}
           savingsPercent={savingsPercent}
         />
         <MapControls
           zoomLevel={view.zoom}
           onZoomIn={() => zoomBy(1)}
           onZoomOut={() => zoomBy(-1)}
+          onFitBounds={() => fitNetworkBounds(poles)}
         />
         <p className="workspace__status">
-          {STATUS_LABELS[status]}
+          {mapProvider === "google"
+            ? `Google Maps · ${STATUS_LABELS[status]}`
+            : `OpenStreetMap / Leaflet · ${STATUS_LABELS[status]}`}
         </p>
         <ScaleBar zoomLevel={view.zoom} lat={view.lat} />
       </div>
       <Sidebar
+        poles={poles}
         poleCount={poles.length}
         selectedCount={selectedIds.length}
         trechoCount={trechos.length}
+        isReadOnly={isReadOnly}
+        canChangeStatus={!ehPerfilSomenteLeituraProjetos(session?.nivel_acesso)}
+        companyProjects={companyProjects}
+        currentProjectId={projectId}
+        onSwitchProject={(nextId) => navigate(`/workspace?id_projeto=${nextId}`)}
+        onChangeProjectStatus={handleChangeProjectStatus}
+        isUpdatingProjectStatus={isUpdatingProjectStatus}
+        projectStatus={project?.status}
         searchEnabled={status === "ready"}
+        searchResult={searchResult}
+        onInsertAtSearch={handleInsertAtSearch}
         onSearch={searchAddress}
         onClearSearch={clearSearch}
         projectName={project?.nome}
@@ -2152,12 +2713,141 @@ export const WorkspaceGis = () => {
         onCablePriceChange={setCablePrice}
         maxSpan={maxSpan}
         onMaxSpanChange={setMaxSpan}
+        rootNodeId={rootNodeId}
+        onRootNodeChange={setRootNodeId}
         snapEnabled={snapEnabled}
         layerState={layerState}
         onToggleLayer={toggleLayer}
+        onOpenGraphModal={() => setShowGraphModal(true)}
+        onOpenReportModal={() => setShowReportModal(true)}
       />
-      {requestError && (
-        <p className="workspace__status" role="alert">{requestError}</p>
+
+      {showGraphModal && (
+        <div className="fixed inset-0 z-[950] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Inspeção Topológica do Grafo AGM de Prim"
+            className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 text-slate-100 shadow-2xl"
+          >
+            <header className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+              <div>
+                <h2 className="text-base font-bold text-white">
+                  Grafo Otimizado — Árvore Geradora Mínima (Algoritmo de Prim)
+                </h2>
+                <p className="text-xs text-slate-400">
+                  {poles.length} nós ativos · {trechos.length} enlaces na AGM · Economia:{" "}
+                  {Number(savingsPercent || 0).toFixed(1)}%
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowGraphModal(false)}
+                aria-label="Fechar inspeção topológica"
+                className="rounded-lg border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-800 hover:text-white"
+              >
+                Fechar ✕
+              </button>
+            </header>
+            <div className="flex-1 space-y-5 overflow-y-auto p-5 text-xs">
+              <section aria-labelledby="agm-edges-heading">
+                <h3 id="agm-edges-heading" className="mb-2 text-xs font-semibold uppercase tracking-wider text-indigo-300">
+                  Enlaces Selecionados (Trecho_Rede)
+                </h3>
+                <div className="tabela-wrap rounded-xl border border-slate-800">
+                  <table className="w-full border-collapse text-left">
+                    <caption className="sr-only">Arestas da Árvore Geradora Mínima</caption>
+                    <thead className="bg-slate-950/80 text-[11px] text-slate-400">
+                      <tr>
+                        <th scope="col" className="px-3 py-2">Origem</th>
+                        <th scope="col" className="px-3 py-2">Destino</th>
+                        <th scope="col" className="px-3 py-2">Cabo</th>
+                        <th scope="col" className="px-3 py-2 text-right">Distância</th>
+                        <th scope="col" className="px-3 py-2 text-right">Custo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {trechos.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-3 py-4 text-center text-slate-500">
+                            Calcule a malha otimizada para visualizar os enlaces da AGM.
+                          </td>
+                        </tr>
+                      ) : (
+                        trechos.map((tr) => (
+                          <tr key={tr.id_trecho} className="border-t border-slate-800">
+                            <td className="px-3 py-2 font-medium text-slate-100">
+                              #{tr.origem_id} {tr.origem_descricao}
+                            </td>
+                            <td className="px-3 py-2 font-medium text-slate-100">
+                              #{tr.destino_id} {tr.destino_descricao}
+                            </td>
+                            <td className="px-3 py-2 text-slate-300">{tr.modelo_cabo}</td>
+                            <td className="px-3 py-2 text-right">{Number(tr.distancia_metros).toFixed(2)} m</td>
+                            <td className="px-3 py-2 text-right text-emerald-400">
+                              {Number(tr.custo_trecho).toLocaleString("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
+                              })}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              {Object.keys(adjacencyList).length > 0 && (
+                <section aria-labelledby="adj-heading">
+                  <h3 id="adj-heading" className="mb-2 text-xs font-semibold uppercase tracking-wider text-indigo-300">
+                    Lista de Adjacência (Grafo Não Direcionado)
+                  </h3>
+                  <ul className="m-0 grid list-none grid-cols-1 gap-2 p-0 sm:grid-cols-2">
+                    {Object.entries(adjacencyList).map(([nodeId, neighbors]) => (
+                      <li
+                        key={nodeId}
+                        className="rounded-lg border border-slate-800 bg-slate-950/70 p-3"
+                      >
+                        <strong className="text-cyan-300">Nó #{nodeId}</strong>
+                        <p className="mt-1 text-[11px] text-slate-300">
+                          {neighbors.length === 0
+                            ? "Sem vizinhos no raio limite."
+                            : neighbors
+                                .map((n) => `→ #${n.destino_id} (${Number(n.distancia_metros).toFixed(1)}m)`)
+                                .join(", ")}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showReportModal && project && (
+        <ProjectReportModal
+          projectId={projectId}
+          initialDetail={{
+            ...project,
+            metragem_total: distanceMeters,
+            custo_estimado: estimatedCost,
+            pontos: poles.map((p) => ({
+              id_ponto: p.id,
+              descricao: p.name,
+              latitude: p.lat,
+              longitude: p.lng,
+              status_fisico: p.status_fisico || "Projetado",
+              status_ponto: "Ativo",
+              id_tipo_equipamento: p.id_tipo_equipamento,
+              custo_equipamento: p.custo_equipamento,
+            })),
+            trechos,
+          }}
+          onClose={() => setShowReportModal(false)}
+        />
       )}
     </main>
   );

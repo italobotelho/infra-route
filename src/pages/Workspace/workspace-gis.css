@@ -623,6 +623,24 @@
   transform: translate(-50%, -50%) scale(1.25);
 }
 
+/* Ajustes para marcadores HTML dentro do Leaflet (quando sem chave Google Maps) */
+.map-canvas [data-cursor-tool="crosshair"] {
+  cursor: crosshair !important;
+}
+
+.leaflet-pole-wrapper,
+.leaflet-search-wrapper {
+  background: transparent;
+  border: none;
+}
+
+.leaflet-pole-inner,
+.leaflet-search-inner {
+  position: relative;
+  left: 50%;
+  top: 50%;
+}
+
 .search-marker {
   position: absolute;
   box-sizing: border-box;
@@ -636,4 +654,29 @@
     0 2px 8px rgba(2, 6, 23, 0.7);
   transform: translate(-50%, -50%);
   pointer-events: none;
+}
+
+.pole-marker--removed {
+  opacity: 0.55;
+  border-style: dashed;
+  border-color: #fda4af;
+  background: #334155 !important;
+  color: #e2e8f0 !important;
+}
+
+.lasso-pin {
+  position: absolute;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  border: 2px dashed #22d3ee;
+  border-radius: 4px;
+  background: rgba(34, 211, 238, 0.25);
+  box-shadow: 0 0 0 6px rgba(34, 211, 238, 0.2);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.map-controls__fit {
+  @apply flex h-10 w-10 items-center justify-center rounded-lg border border-slate-700 bg-slate-900/95 text-slate-200 shadow-md transition hover:bg-slate-800 hover:text-cyan-300;
 }
