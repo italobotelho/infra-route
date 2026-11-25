@@ -29,15 +29,27 @@ dist-ssr/
 build/
 out/
 .vite/
+.eslintcache
+*.tsbuildinfo
 *.egg-info/
 
 # Bancos de dados locais (SQLite) e Cache de Desenvolvimento
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
 .cache/
 tmp/
 temp/
+playwright-report/
+test-results/
+.gemini/
+.claude/
 
 # Materiais de referência locais (Slides da disciplina)
 docs/Slides - Prog_Web/
