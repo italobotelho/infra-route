@@ -35,6 +35,7 @@ from backend.services.prim_service import (
 
 
 class NivelAcessoRBAC(str, Enum):
+    SUPER_ADMIN = "SuperAdmin"
     ADMINISTRADOR = "Administrador"
     PROJETISTA = "Projetista"
     VISUALIZADOR = "Visualizador"
@@ -126,6 +127,7 @@ class ProjetoDominio:
     status: StatusProjetoEnum = StatusProjetoEnum.EM_PLANEJAMENTO
     custo_estimado: float = 0.0
     metragem_total: float = 0.0
+    data_criacao: str = ""
 
     def __post_init__(self) -> None:
         if self.id_projeto <= 0:
@@ -158,6 +160,11 @@ class GovernancaMultiTenantService:
     PAPEIS_ESCRITA: Set[NivelAcessoRBAC] = {
         NivelAcessoRBAC.ADMINISTRADOR,
         NivelAcessoRBAC.PROJETISTA,
+    }
+    PAPEIS_AUDITORIA: Set[NivelAcessoRBAC] = {
+        NivelAcessoRBAC.SUPER_ADMIN,
+        NivelAcessoRBAC.ADMINISTRADOR,
+        NivelAcessoRBAC.VISUALIZADOR,
     }
     STATUS_PROJETO_IMUTAVEIS: Set[str] = {
         StatusProjetoEnum.CONCLUIDO.value,
@@ -218,6 +225,37 @@ class GovernancaMultiTenantService:
                 )
             self.vinculos[chave] = vinc
 
+    def usuario_eh_super_admin(self, id_usuario: int) -> bool:
+        return any(
+            v.id_usuario == id_usuario and v.nivel_acesso == NivelAcessoRBAC.SUPER_ADMIN
+            for v in self.vinculos.values()
+        )
+
+    def obter_vinculo_principal(self, id_usuario: int) -> VinculoCorporate:
+        if id_usuario not in self.usuarios:
+            raise RecursoNaoEncontradoError(f"Usuário {id_usuario} não cadastrado.")
+        for v in self.vinculos.values():
+            if v.id_usuario == id_usuario:
+                return v
+        raise ViolacaoMultiTenantError(
+            f"Acesso negado (Multi-tenant): O usuário {id_usuario} não possui vínculo contratual ativo."
+        )
+
+    def validar_acesso_auditoria(self, id_usuario: int) -> VinculoCorporate:
+        """
+        Princípio do Menor Privilégio / LGPD:
+        Apenas `SuperAdmin` (global), `Administrador` (da própria empresa) e
+        `Visualizador` (auditor interno da própria empresa) podem consultar o Painel
+        de Requisições e Logs. `Projetista` recebe HTTP 403.
+        """
+        vinculo = self.obter_vinculo_principal(id_usuario)
+        if vinculo.nivel_acesso not in self.PAPEIS_AUDITORIA:
+            raise PermissaoInsuficienteError(
+                f"Acesso negado ao Painel de Logs/Requisições (LGPD / Menor Privilégio): "
+                f"O perfil '{vinculo.nivel_acesso.value}' não possui permissão para consultar logs de auditoria."
+            )
+        return vinculo
+
     def validar_acesso_tenant(
         self,
         id_usuario: int,
@@ -233,6 +271,15 @@ class GovernancaMultiTenantService:
             raise RecursoNaoEncontradoError(f"Usuário {id_usuario} não cadastrado.")
         if id_empresa not in self.empresas:
             raise RecursoNaoEncontradoError(f"Empresa {id_empresa} não cadastrada.")
+
+        if self.usuario_eh_super_admin(id_usuario):
+            vinculo_sa = self.obter_vinculo_principal(id_usuario)
+            if exigir_escrita:
+                raise PermissaoInsuficienteError(
+                    "Permissão insuficiente (RBAC / Segregação de Funções): O perfil 'SuperAdmin' "
+                    "possui acesso global somente leitura em projetos de clientes."
+                )
+            return vinculo_sa
 
         vinculo = self.vinculos.get((id_usuario, id_empresa))
         if vinculo is None:

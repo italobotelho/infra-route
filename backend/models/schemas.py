@@ -32,6 +32,7 @@ class EnumStatusPonto(str, Enum):
 
 
 class EnumNivelAcesso(str, Enum):
+    SUPER_ADMIN = "SuperAdmin"
     ADMINISTRADOR = "Administrador"
     PROJETISTA = "Projetista"
     VISUALIZADOR = "Visualizador"
@@ -134,7 +135,46 @@ class EventoAuditoriaSchema(BaseModel):
     acao: str
     id_usuario: Optional[int] = None
     email_usuario: Optional[str] = None
+    nome_usuario: Optional[str] = None
+    papel_rbac: Optional[str] = None
     detalhes: str
+    id_empresa: Optional[int] = None
+    razao_social_empresa: Optional[str] = None
+    severidade: str = "INFO"
+    metodo_http: Optional[str] = None
+    caminho_http: Optional[str] = None
+    status_http: Optional[int] = None
+    duracao_ms: Optional[float] = None
+    ip_origem: Optional[str] = None
+
+
+class EmpresaFiltroSchema(BaseModel):
+    id_empresa: int
+    razao_social: str
+    cnpj: str
+
+
+class ColaboradorFiltroSchema(BaseModel):
+    id_usuario: int
+    nome: str
+    email: str
+    nivel_acesso: str
+    id_empresa: int
+    razao_social_empresa: str
+
+
+class OpcoesFiltroAuditoriaSchema(BaseModel):
+    escopo_global: bool
+    id_empresa_travada: Optional[int] = None
+    empresas: List[EmpresaFiltroSchema]
+    funcionarios: List[ColaboradorFiltroSchema]
+    acoes: List[str]
+    metodos_http: List[str]
+
+
+class TicketStreamResponseSchema(BaseModel):
+    ticket: str
+    expira_em_segundos: int
 
 
 class TipoEquipamentoSchema(BaseModel):
@@ -165,6 +205,21 @@ class TipoCaboSchema(BaseModel):
 class CatalogosResponseSchema(BaseModel):
     catalogo_equipamentos: List[TipoEquipamentoSchema]
     catalogo_cabos: List[TipoCaboSchema]
+
+
+class CriarTipoCaboRequestSchema(BaseModel):
+    descricao_modelo: str = Field(..., min_length=1, max_length=255)
+    custo_por_metro: float = Field(..., ge=0)
+    limite_distancia_metros: float = Field(..., gt=0)
+    id_usuario_autor: int = Field(default=1, gt=0)
+
+    @field_validator("descricao_modelo")
+    @classmethod
+    def validar_modelo_nao_vazio(cls, v: str) -> str:
+        limpo = (v or "").strip()
+        if not limpo:
+            raise ValueError("Descricao_Modelo não pode estar em branco.")
+        return limpo
 
 
 class PontoRedeSchema(BaseModel):
@@ -213,16 +268,30 @@ class CriarPontoRedeRequestSchema(BaseModel):
 
 
 class AtualizarCoordenadasPontoRequestSchema(BaseModel):
-    latitude: float = Field(..., ge=-90, le=90)
-    longitude: float = Field(..., ge=-180, le=180)
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+    descricao: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    status_fisico: Optional[EnumStatusFisico] = None
+    id_tipo_equipamento: Optional[int] = Field(default=None, gt=0)
+    atualizar_tipo_equipamento: bool = False
     id_usuario_autor: int = Field(default=1, gt=0)
 
     @field_validator("latitude", "longitude")
     @classmethod
-    def validar_coordenada_finita(cls, value: float) -> float:
-        if not math.isfinite(value):
+    def validar_coordenada_finita(cls, value: Optional[float]) -> Optional[float]:
+        if value is not None and not math.isfinite(value):
             raise ValueError("As coordenadas devem ser valores finitos.")
         return value
+
+    @field_validator("descricao")
+    @classmethod
+    def validar_descricao_opcional(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        limpo = value.strip()
+        if not limpo:
+            raise ValueError("A descrição do Ponto_Rede não pode estar em branco.")
+        return limpo
 
 
 class SoftDeletePontoRequestSchema(BaseModel):
@@ -297,6 +366,19 @@ class CriarProjetoRequestSchema(BaseModel):
     id_usuario_autor: int = Field(default=1, gt=0)
 
 
+class AtualizarProjetoRequestSchema(BaseModel):
+    nome: str = Field(..., min_length=1, max_length=255, description="Novo nome do projeto")
+    id_usuario_autor: int = Field(default=1, gt=0)
+
+    @field_validator("nome")
+    @classmethod
+    def validar_nome_nao_vazio(cls, value: str) -> str:
+        limpo = (value or "").strip()
+        if not limpo:
+            raise ValueError("O nome do projeto não pode estar em branco.")
+        return limpo
+
+
 class AtualizarStatusProjetoRequestSchema(BaseModel):
     novo_status: EnumStatusProjeto = Field(..., description="Novo status do ciclo de vida do projeto")
     id_usuario_autor: int = Field(default=1, gt=0)
@@ -310,6 +392,9 @@ class ProjetoResumoSchema(BaseModel):
     custo_estimado: float
     id_empresa: int
     id_engenheiro: int
+    engenheiro_nome: Optional[str] = None
+    engenheiro_crea: Optional[str] = None
+    data_criacao: Optional[str] = None
 
 
 class ProjetoDetalhadoSchema(ProjetoResumoSchema):

@@ -13,7 +13,7 @@ from backend.models.schemas import (
     ResultadoMSTProjetoSchema,
     VizinhoAdjacenciaSchema,
 )
-from backend.services.exceptions import ValidacaoDominioError
+from backend.services.exceptions import PermissaoInsuficienteError, ValidacaoDominioError
 from backend.services.workspace_store import SessaoAutenticada, workspace_store
 from backend.services.prim_service import (
     ArestaCandidata,
@@ -40,7 +40,7 @@ router = APIRouter(
 def calcular_mst_projeto(
     id_projeto: int,
     payload: RequisicaoCalculoMSTSchema | None = None,
-    id_usuario_autor: int = Query(default=1, gt=0),
+    id_usuario_autor: Optional[int] = Query(default=None, gt=0),
     sessao: Optional[SessaoAutenticada] = Depends(obter_sessao_opcional),
 ) -> ResultadoMSTProjetoSchema:
     if id_projeto <= 0:
@@ -48,7 +48,14 @@ def calcular_mst_projeto(
             "O identificador do projeto (id_projeto) deve ser um inteiro positivo."
         )
 
-    autor_id = sessao.id_usuario if sessao is not None else id_usuario_autor
+    if sessao is not None:
+        if id_usuario_autor is not None and id_usuario_autor != sessao.id_usuario:
+            raise PermissaoInsuficienteError(
+                "Anti-Spoofing: o id_usuario_autor informado diverge da sessão JWT autenticada."
+            )
+        autor_id = sessao.id_usuario
+    else:
+        autor_id = id_usuario_autor if id_usuario_autor is not None else 1
 
     if payload is None:
         resultado = workspace_store.recalcular_mst_projeto(

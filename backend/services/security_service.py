@@ -13,6 +13,7 @@ Serviço de Segurança Corporativa do InfraRoute (100% Gratuito / Open-Source):
 
 import base64
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from email.message import EmailMessage
 import hashlib
 import hmac
@@ -452,3 +453,102 @@ def decodificar_token_acesso(
         )
     except (KeyError, ValueError, TypeError) as exc:
         raise NaoAutenticadoError("Claims obrigatórias ausentes no token JWT.") from exc
+
+
+def agora_utc_iso() -> str:
+    """Retorna o timestamp UTC atual sempre em ISO-8601 com sufixo explícito `+00:00`."""
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def normalizar_timestamp_utc_iso(valor: Optional[str]) -> str:
+    """
+    Normaliza strings ISO-8601 (com ou sem `Z`) ou timestamps SQLite (`YYYY-MM-DD HH:MM:SS`)
+    para ISO-8601 explícito em UTC (`+00:00`).
+    """
+    if not valor or not str(valor).strip():
+        return agora_utc_iso()
+    bruto = str(valor).strip()
+    if bruto.endswith("Z"):
+        bruto = f"{bruto[:-1]}+00:00"
+    elif " " in bruto and "T" not in bruto:
+        bruto = bruto.replace(" ", "T", 1)
+    try:
+        dt = datetime.fromisoformat(bruto)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+    except ValueError:
+        return agora_utc_iso()
+
+
+def mascarar_cpf_lgpd(cpf: Optional[str]) -> str:
+    digitos = "".join(filter(str.isdigit, cpf or ""))
+    if len(digitos) != 11:
+        return "***.***.***-**"
+    return f"***.{digitos[3:6]}.{digitos[6:9]}-**"
+
+
+def mascarar_ip_lgpd(ip: Optional[str]) -> Optional[str]:
+    if not ip:
+        return None
+    limpo = ip.strip()
+    if limpo in ("127.0.0.1", "::1", "localhost", "testclient"):
+        return limpo
+    partes = limpo.split(".")
+    if len(partes) == 4:
+        return f"{partes[0]}.{partes[1]}.{partes[2]}.xxx"
+    return limpo
+
+
+class GerenciadorTicketsStream:
+    """
+    Emite tickets efêmeros opacos para conexões Server-Sent Events (SSE), evitando
+    expor o token JWT completo de 8h na query string da URL (`?token=...`).
+    """
+
+    def __init__(self, ttl_padrao_segundos: int = 120) -> None:
+        self.ttl_padrao_segundos = ttl_padrao_segundos
+        # ticket -> (id_usuario, exp_timestamp)
+        self._tickets: Dict[str, Tuple[int, int]] = {}
+
+    def _limpar_expirados(self, agora: int) -> None:
+        expirados = [tk for tk, (_, exp) in self._tickets.items() if exp <= agora]
+        for tk in expirados:
+            self._tickets.pop(tk, None)
+
+    def emitir_ticket(
+        self, id_usuario: int, ttl_segundos: Optional[int] = None, agora_timestamp: Optional[int] = None
+    ) -> str:
+        agora = int(time.time()) if agora_timestamp is None else int(agora_timestamp)
+        self._limpar_expirados(agora)
+        ttl = int(ttl_segundos or self.ttl_padrao_segundos)
+        ticket = secrets.token_urlsafe(24)
+        self._tickets[ticket] = (int(id_usuario), agora + ttl)
+        return ticket
+
+    def validar_ticket(
+        self, ticket: str, agora_timestamp: Optional[int] = None
+    ) -> Optional[int]:
+        if not ticket:
+            return None
+        agora = int(time.time()) if agora_timestamp is None else int(agora_timestamp)
+        self._limpar_expirados(agora)
+        registro = self._tickets.get(ticket.strip())
+        if not registro:
+            return None
+        id_usuario, exp = registro
+        if exp <= agora:
+            self._tickets.pop(ticket.strip(), None)
+            return None
+        return id_usuario
+
+    def revogar_usuario(self, id_usuario: int) -> None:
+        alvos = [tk for tk, (uid, _) in self._tickets.items() if uid == int(id_usuario)]
+        for tk in alvos:
+            self._tickets.pop(tk, None)
+
+    def limpar(self) -> None:
+        self._tickets.clear()
+
+
+gerenciador_tickets_stream = GerenciadorTicketsStream()

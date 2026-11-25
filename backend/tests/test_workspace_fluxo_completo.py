@@ -47,7 +47,7 @@ class TestWorkspaceFluxoCompleto(unittest.TestCase):
             crea="1234567890",
         )
 
-        self.assertEqual(sessao.id_usuario, 3)
+        self.assertEqual(sessao.id_usuario, 6)
         self.assertEqual(sessao.id_empresa_padrao, 1)
         self.assertEqual(sessao.nivel_acesso, "Projetista")
         self.assertEqual(
