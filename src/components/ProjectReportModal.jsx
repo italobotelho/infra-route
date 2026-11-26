@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiRequest, getSession } from "../lib/api";
+import { BrandLogo } from "./BrandLogo";
 import { useToast } from "./ToastProvider";
 import {
   baixarArquivo,
@@ -8,6 +9,7 @@ import {
   gerarGeoJsonProjeto,
 } from "../utils/projectExport";
 import { formatarDataBr, formatarDataHoraBr } from "../utils/dateTime";
+import { baixarPdfMemorial } from "../utils/pdfMemorial";
 
 const RESERVA_OPCOES = [0, 10, 15, 20];
 
@@ -18,6 +20,22 @@ export function ProjectReportModal({ projectId, initialDetail = null, onClose })
   const [loading, setLoading] = useState(!initialDetail);
   const [error, setError] = useState("");
   const [reservaPct, setReservaPct] = useState(10);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+  useEffect(() => {
+    document.body.classList.add("overflow-hidden");
+    const handleEsc = (event) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        onClose?.();
+      }
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => {
+      document.body.classList.remove("overflow-hidden");
+      window.removeEventListener("keydown", handleEsc);
+    };
+  }, [onClose]);
 
   useEffect(() => {
     if (initialDetail && initialDetail.id_projeto === projectId) {
@@ -46,8 +64,19 @@ export function ProjectReportModal({ projectId, initialDetail = null, onClose })
   const bom = detail ? calcularBomProjeto(detail, reservaPct) : null;
   const projectCode = `IR-${String(projectId || detail?.id_projeto || 0).padStart(4, "0")}`;
 
-  const handlePrint = () => {
-    window.print();
+  const handleExportPdf = async () => {
+    if (!detail || isGeneratingPdf) return;
+    setIsGeneratingPdf(true);
+    try {
+      await baixarPdfMemorial(detail, reservaPct, {
+        empresaNome: session?.razao_social_empresa,
+      });
+      showToast(`Memorial Descritivo ${projectCode} (.pdf) gerado.`, { type: "success" });
+    } catch (err) {
+      showToast(err?.message || "Falha ao gerar o arquivo PDF.", { type: "error" });
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
   const handleExportGeoJson = () => {
@@ -63,7 +92,9 @@ export function ProjectReportModal({ projectId, initialDetail = null, onClose })
 
   const handleExportCsv = () => {
     if (!detail) return;
-    const csv = gerarCsvBomETrechos(detail, reservaPct);
+    const csv = gerarCsvBomETrechos(detail, reservaPct, {
+      empresaNome: session?.razao_social_empresa,
+    });
     baixarArquivo(
       csv,
       `orcamento-bom-${projectCode.toLowerCase()}.csv`,
@@ -84,29 +115,38 @@ export function ProjectReportModal({ projectId, initialDetail = null, onClose })
 
   return (
     <div
-      className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"
+      className="modal-backdrop-enter fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"
       role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose?.();
+        }
+      }}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={`Memorial Descritivo e Orçamento de ${detail?.nome || projectCode}`}
-        className="print-sheet flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-2xl"
+        data-theme-surface="adaptive"
+        className="print-sheet modal-panel-enter flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-2xl"
       >
-        <header className="no-print flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-6 py-4">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-700">
-              Memorial Descritivo & Orçamento CAPEX
-            </p>
-            <h2 className="text-lg font-bold text-slate-900">
-              {detail?.nome || "Carregando projeto..."} ({projectCode})
-            </h2>
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <BrandLogo size="sm" decorative />
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-700">
+                Memorial Descritivo & Orçamento CAPEX
+              </p>
+              <h2 className="text-lg font-bold text-slate-900">
+                {detail?.nome || "Carregando projeto..."} ({projectCode})
+              </h2>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Fechar memorial descritivo"
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+            className="no-print rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
           >
             Fechar ✕
           </button>
@@ -164,7 +204,7 @@ export function ProjectReportModal({ projectId, initialDetail = null, onClose })
                 aria-label="Resumo executivo e reserva técnica"
                 className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-blue-200 bg-blue-50/60 p-4"
               >
-                <div className="flex flex-wrap gap-6">
+                <div className="flex flex-wrap gap-6 tabular-nums">
                   <div>
                     <span className="block text-[11px] font-medium text-slate-600">Metragem Líquida AGM</span>
                     <strong className="text-base font-bold text-slate-900">
@@ -185,6 +225,16 @@ export function ProjectReportModal({ projectId, initialDetail = null, onClose })
                       {bom.capexTotalComReserva.toLocaleString("pt-BR", {
                         style: "currency",
                         currency: "BRL",
+                      })}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="block text-[11px] font-medium text-slate-600">Custo / km (OSP)</span>
+                    <strong className="text-base font-bold text-indigo-700">
+                      {bom.custoPorKmComReserva.toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
+                        maximumFractionDigits: 0,
                       })}
                     </strong>
                   </div>
@@ -240,19 +290,22 @@ export function ProjectReportModal({ projectId, initialDetail = null, onClose })
                             <td className="px-3 py-2 font-mono text-[11px] text-slate-600">{item.codigo}</td>
                             <th scope="row" className="px-3 py-2 font-semibold text-slate-900">{item.item}</th>
                             <td className="px-3 py-2 text-slate-600">{item.fabricante}</td>
-                            <td className="px-3 py-2 text-right">
-                              {item.unidade === "m" ? item.quantidade.toFixed(2) : item.quantidade} {item.unidade}
-                            </td>
-                            <td className="px-3 py-2 text-right font-medium text-blue-800">
+                            <td className="px-3 py-2 text-right tabular-nums">
                               {item.unidade === "m"
-                                ? item.quantidadeComReserva.toFixed(2)
+                                ? item.quantidade.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                : item.quantidade}{" "}
+                              {item.unidade}
+                            </td>
+                            <td className="px-3 py-2 text-right font-medium tabular-nums text-blue-800">
+                              {item.unidade === "m"
+                                ? item.quantidadeComReserva.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                                 : item.quantidadeComReserva}{" "}
                               {item.unidade}
                             </td>
-                            <td className="px-3 py-2 text-right">
+                            <td className="px-3 py-2 text-right tabular-nums">
                               {item.custoUnitario.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                             </td>
-                            <td className="px-3 py-2 text-right font-semibold text-slate-900">
+                            <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">
                               {item.subtotalComReserva.toLocaleString("pt-BR", {
                                 style: "currency",
                                 currency: "BRL",
@@ -310,8 +363,14 @@ export function ProjectReportModal({ projectId, initialDetail = null, onClose })
                             <td className="px-3 py-2 font-medium text-slate-900">{tr.origem_descricao}</td>
                             <td className="px-3 py-2 font-medium text-slate-900">{tr.destino_descricao}</td>
                             <td className="px-3 py-2 text-slate-700">{tr.modelo_cabo}</td>
-                            <td className="px-3 py-2 text-right">{Number(tr.distancia_metros).toFixed(2)} m</td>
-                            <td className="px-3 py-2 text-right font-medium text-slate-900">
+                            <td className="px-3 py-2 text-right tabular-nums">
+                              {Number(tr.distancia_metros).toLocaleString("pt-BR", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}{" "}
+                              m
+                            </td>
+                            <td className="px-3 py-2 text-right font-medium tabular-nums text-slate-900">
                               {Number(tr.custo_trecho).toLocaleString("pt-BR", {
                                 style: "currency",
                                 currency: "BRL",
@@ -322,6 +381,77 @@ export function ProjectReportModal({ projectId, initialDetail = null, onClose })
                       )}
                     </tbody>
                   </table>
+                </div>
+              </section>
+
+              <section aria-labelledby="ativos-heading">
+                <h3 id="ativos-heading" className="mb-2 text-sm font-bold text-slate-900">
+                  3. Inventário de Ativos Georreferenciados ({bom.pontosAtivosCount} — WGS 84)
+                </h3>
+                <div className="tabela-wrap rounded-xl border border-slate-200">
+                  <table className="w-full border-collapse text-left text-xs">
+                    <caption className="sr-only">Relação de postes, CTOs, CEOs e OLTs ativos no projeto</caption>
+                    <thead className="bg-slate-50 text-[11px] font-semibold uppercase text-slate-600">
+                      <tr>
+                        <th scope="col" className="px-3 py-2">#</th>
+                        <th scope="col" className="px-3 py-2">Descrição</th>
+                        <th scope="col" className="px-3 py-2">Status Físico</th>
+                        <th scope="col" className="px-3 py-2 text-right">Latitude</th>
+                        <th scope="col" className="px-3 py-2 text-right">Longitude</th>
+                        <th scope="col" className="px-3 py-2 text-right">Custo Equip.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bom.pontosAtivos.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-3 py-4 text-center text-slate-500">
+                            Nenhum ativo posicionado neste projeto.
+                          </td>
+                        </tr>
+                      ) : (
+                        bom.pontosAtivos.map((pt) => (
+                          <tr key={pt.id_ponto} className="border-t border-slate-200">
+                            <td className="px-3 py-2 font-mono text-[11px] text-slate-600">#{pt.id_ponto}</td>
+                            <td className="px-3 py-2 font-medium text-slate-900">{pt.descricao}</td>
+                            <td className="px-3 py-2 text-slate-700">{pt.status_fisico || "Projetado"}</td>
+                            <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-600">
+                              {Number(pt.latitude).toFixed(6)}
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-600">
+                              {Number(pt.longitude).toFixed(6)}
+                            </td>
+                            <td className="px-3 py-2 text-right font-medium tabular-nums text-slate-900">
+                              {Number(pt.custo_equipamento || 0).toLocaleString("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
+                              })}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section
+                aria-label="Responsabilidade técnica e emissão"
+                className="flex flex-wrap items-end justify-between gap-4 border-t border-slate-200 pt-4 text-xs text-slate-600"
+              >
+                <div>
+                  <p className="font-semibold text-slate-900">
+                    {detail.engenheiro_nome || `Engenheiro #${detail.id_engenheiro}`}
+                    {detail.engenheiro_crea ? ` · CREA ${detail.engenheiro_crea}` : ""}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Responsável Técnico pelo Traçado Óptico e Quantitativo (BOM)
+                  </p>
+                </div>
+                <div className="text-right text-[11px] text-slate-500">
+                  <p>Documento técnico emitido via InfraRoute ({projectCode})</p>
+                  <p>
+                    <time dateTime={new Date().toISOString()}>{formatarDataHoraBr(new Date())} (BRT)</time>
+                  </p>
                 </div>
               </section>
             </>
@@ -359,11 +489,11 @@ export function ProjectReportModal({ projectId, initialDetail = null, onClose })
             </button>
             <button
               type="button"
-              onClick={handlePrint}
-              disabled={!detail}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+              onClick={handleExportPdf}
+              disabled={!detail || isGeneratingPdf}
+              className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Imprimir / Salvar PDF
+              {isGeneratingPdf ? "Gerando PDF..." : "Baixar PDF (.pdf)"}
             </button>
           </div>
         </footer>
