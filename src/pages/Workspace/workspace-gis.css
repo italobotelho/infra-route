@@ -39,10 +39,16 @@
   @apply h-px w-full shrink-0 bg-slate-800;
 }
 
+/* Barra superior dedicada do Workspace GIS */
+
+.workspace-topbar {
+  @apply pointer-events-auto absolute top-0 inset-x-0 z-40 flex h-14 items-center justify-between gap-3 border-b border-slate-800 bg-slate-950/95 px-3 backdrop-blur-md sm:px-4;
+}
+
 /* Mapa */
 
 .map-canvas {
-  @apply absolute inset-y-0 left-80 right-0 overflow-hidden bg-[#111a23];
+  @apply absolute top-14 bottom-0 left-0 right-0 overflow-hidden bg-[#111a23] lg:left-[296px];
 }
 
 .map-error {
@@ -66,7 +72,7 @@
 /* Zona centralizada da barra de ferramentas e dica contextual */
 
 .toolbar-zone {
-  @apply pointer-events-none absolute top-4 left-80 right-0 z-10 flex flex-col items-center gap-2 px-4;
+  @apply pointer-events-none absolute top-[70px] left-0 right-0 z-10 flex flex-col items-center gap-2 px-4 lg:left-[296px];
 }
 
 .toolbar {
@@ -108,29 +114,33 @@
   @apply absolute top-1.5 right-1.5 h-2 w-2 rounded-full border border-slate-950/60;
 }
 
-/* Guia Rápido Recolhível no Topo Direito */
+/* Dock coordenado no topo direito (Guia Rápido + Logs Ao Vivo + Inspetor) */
+
+.workspace-top-right-dock {
+  @apply pointer-events-none absolute top-[70px] right-4 z-20 flex max-h-[calc(100vh-13rem)] max-w-[calc(100vw-2rem)] flex-col items-end gap-2.5 overflow-y-auto pr-0.5;
+}
 
 .quick-guide-wrap {
-  @apply pointer-events-auto absolute top-4 right-6 z-20 flex flex-col items-end gap-2;
+  @apply pointer-events-auto flex flex-col items-end gap-2;
 }
 
 .quick-guide-btn {
   font-family: var(--font-medium);
-  @apply inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/95 px-3 py-1.5 text-[11px] font-medium text-slate-200 shadow-lg transition hover:border-indigo-500 hover:text-white;
+  @apply inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/95 px-3 py-1.5 text-[11px] font-medium text-slate-200 shadow-lg transition hover:border-indigo-500 hover:text-white;
 }
 
 .quick-guide-card {
-  @apply w-80 rounded-xl border border-slate-700 bg-slate-900/95 p-4 text-xs text-slate-200 shadow-2xl backdrop-blur-md;
+  @apply w-80 max-w-full rounded-xl border border-slate-700 bg-slate-900/95 p-4 text-xs text-slate-200 shadow-2xl backdrop-blur-md;
 }
 
 /* Painel de métricas e legenda inferior */
 
 .map-stats {
-  @apply pointer-events-auto absolute bottom-8 left-[340px] z-10 inline-flex flex-wrap items-center gap-5 overflow-hidden rounded-xl border border-solid border-slate-700/90 bg-slate-900/95 px-5 py-3.5 shadow-[0px_8px_32px_#02061770] backdrop-blur-md;
+  @apply pointer-events-auto absolute right-4 bottom-8 left-4 z-10 inline-flex flex-wrap items-center gap-4 overflow-hidden rounded-xl border border-solid border-slate-700/80 bg-slate-900/90 px-4 py-2.5 shadow-[0px_8px_32px_#02061770] backdrop-blur-md lg:right-auto lg:bottom-6 lg:left-[316px];
 }
 
 .map-stats__group {
-  @apply inline-flex flex-col items-start gap-1;
+  @apply inline-flex flex-col items-start gap-0.5;
 }
 
 .map-stats__label {
@@ -144,7 +154,7 @@
 
 .map-stats__value {
   font-family: var(--font-semibold);
-  @apply text-2xl font-semibold tracking-[-0.17px] text-slate-50;
+  @apply text-xl font-semibold tracking-[-0.17px] tabular-nums text-slate-50;
 }
 
 .map-stats__unit {
@@ -257,11 +267,41 @@
 /* Barra lateral (com rolagem interna e rodapé fixo) */
 
 .sidebar {
-  @apply absolute inset-y-0 left-0 z-20 h-full w-80;
+  @apply absolute top-14 bottom-0 left-0 z-30 w-[296px] max-w-[88vw] transition-transform duration-200;
+}
+
+.workspace--sidebar-collapsed .sidebar {
+  @apply pointer-events-none -translate-x-full;
+}
+
+.workspace-alert {
+  @apply pointer-events-auto absolute top-[132px] left-4 z-20 max-w-md rounded-xl border border-amber-500/60 bg-amber-950/90 px-4 py-2.5 text-xs text-amber-200 shadow-xl lg:left-[316px];
+}
+
+@media (min-width: 1024px) {
+  .workspace--sidebar-collapsed .map-canvas {
+    left: 0;
+  }
+
+  .workspace--sidebar-collapsed .toolbar-zone {
+    left: 0;
+  }
+
+  .workspace--sidebar-collapsed .map-stats {
+    left: 1rem;
+  }
+
+  .workspace--sidebar-collapsed .workspace__status {
+    left: 1rem;
+  }
+
+  .workspace--sidebar-collapsed .workspace-alert {
+    left: 1rem;
+  }
 }
 
 .sidebar__panel {
-  @apply flex h-full w-80 flex-col justify-between border-r border-solid border-slate-800 bg-slate-950;
+  @apply flex h-full w-full flex-col justify-between border-r border-solid border-slate-800 bg-slate-950;
 }
 
 .sidebar__header {
@@ -318,7 +358,22 @@
 }
 
 .sidebar__content {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
   @apply flex min-h-0 w-full flex-1 flex-col items-start overflow-y-auto;
+}
+
+.sidebar__content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar__content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar__content::-webkit-scrollbar-thumb {
+  background-color: #334155;
+  border-radius: 9999px;
 }
 
 /* Busca */
@@ -474,13 +529,13 @@
 
 .workspace__status {
   font-family: var(--font-regular);
-  @apply absolute bottom-1.5 left-[340px] z-10 text-[10px] font-normal text-slate-400;
+  @apply absolute bottom-1.5 left-4 z-10 text-[10px] font-normal text-slate-400 lg:left-[316px];
 }
 
 /* Botões da barra de ferramentas (estados) */
 
 .tool-button {
-  @apply relative flex h-[52px] w-[68px] cursor-pointer flex-col items-center justify-center gap-1 overflow-hidden rounded-xl px-1 py-1.5 text-slate-300 transition hover:bg-slate-800 hover:text-white;
+  @apply relative flex h-11 w-[62px] cursor-pointer flex-col items-center justify-center gap-1 overflow-hidden rounded-xl px-1 py-1 text-slate-300 transition hover:bg-slate-800 hover:text-white;
 }
 
 .tool-button--active {
@@ -667,16 +722,356 @@
 .lasso-pin {
   position: absolute;
   box-sizing: border-box;
-  width: 16px;
-  height: 16px;
-  border: 2px dashed #22d3ee;
-  border-radius: 4px;
-  background: rgba(34, 211, 238, 0.25);
-  box-shadow: 0 0 0 6px rgba(34, 211, 238, 0.2);
+  width: 14px;
+  height: 14px;
+  border: 2px solid #22d3ee;
+  border-radius: 9999px;
+  background: rgba(34, 211, 238, 0.35);
+  box-shadow: 0 0 0 6px rgba(34, 211, 238, 0.22);
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
 
+@keyframes lasso-dash {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+.lasso-rect-animated {
+  animation: lasso-dash 0.8s linear infinite;
+}
+
 .map-controls__fit {
   @apply flex h-10 w-10 items-center justify-center rounded-lg border border-slate-700 bg-slate-900/95 text-slate-200 shadow-md transition hover:bg-slate-800 hover:text-cyan-300;
+}
+
+.workspace .workspace-theme-btn {
+  @apply h-8 w-8 rounded-lg;
+}
+
+/* ================================================================== */
+/* Tema Claro Completo do Workspace GIS (.workspace--light)            */
+/* ================================================================== */
+
+.workspace--light,
+.workspace--light .map-canvas {
+  background-color: #e2e8f0;
+}
+
+.workspace--light .workspace-topbar {
+  border-color: #cbd5e1;
+  background-color: rgba(255, 255, 255, 0.94);
+  color: #0f172a;
+}
+
+.workspace--light .workspace-topbar h1,
+.workspace--light .workspace-topbar [class*="text-slate-50"],
+.workspace--light .workspace-topbar [class*="text-slate-100"],
+.workspace--light .workspace-topbar [class*="text-slate-200"] {
+  color: #0f172a;
+}
+
+.workspace--light .workspace-topbar [class*="text-slate-400"],
+.workspace--light .workspace-topbar [class*="text-slate-300"] {
+  color: #475569;
+}
+
+.workspace--light .workspace-topbar [class*="border-slate-700"],
+.workspace--light .workspace-topbar [class*="border-slate-800"] {
+  border-color: #cbd5e1;
+}
+
+.workspace--light .workspace-topbar a[class*="bg-slate-900"],
+.workspace--light .workspace-topbar button[class*="bg-slate-900"],
+.workspace--light .workspace-topbar select[class*="bg-slate-900"] {
+  background-color: #f8fafc;
+  color: #1e293b;
+}
+
+.workspace--light .workspace-topbar a[class*="bg-slate-900"]:hover,
+.workspace--light .workspace-topbar button[class*="bg-slate-900"]:hover {
+  background-color: #e2e8f0;
+  color: #0f172a;
+}
+
+.workspace--light .workspace-topbar button[title*="Memorial"] {
+  background-color: #eef2ff;
+  border-color: #a5b4fc;
+  color: #3730a3;
+}
+
+.workspace--light .workspace-topbar button[title*="Memorial"]:hover {
+  background-color: #e0e7ff;
+}
+
+.workspace--light .workspace-topbar button[title*="Memorial"] svg {
+  color: #4f46e5;
+}
+
+.workspace--light .sidebar__panel {
+  border-color: #cbd5e1;
+  background-color: rgba(255, 255, 255, 0.96);
+  box-shadow: 4px 0 24px rgba(15, 23, 42, 0.12);
+}
+
+.workspace--light .sidebar__header,
+.workspace--light .sidebar__footer,
+.workspace--light .divider-horizontal {
+  border-color: #e2e8f0;
+  background-color: #f8fafc;
+}
+
+.workspace--light .brand__name,
+.workspace--light .project__name {
+  color: #0f172a;
+}
+
+.workspace--light .brand__tag,
+.workspace--light .project__eyebrow,
+.workspace--light .panel-section__title,
+.workspace--light .field__label {
+  color: #475569;
+}
+
+.workspace--light .project__badge {
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+.workspace--light .project__badge--snap-on {
+  background-color: #ecfdf5;
+  border-color: #6ee7b7;
+  color: #065f46;
+}
+
+.workspace--light .sidebar__content::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.35);
+}
+
+.workspace--light .search__field,
+.workspace--light .field__control {
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+.workspace--light .search__input {
+  color: #0f172a;
+}
+
+.workspace--light .search__input::placeholder {
+  color: #64748b;
+}
+
+.workspace--light .field__unit {
+  color: #334155;
+}
+
+.workspace--light .panel-note {
+  background-color: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.workspace--light .panel-note__text,
+.workspace--light .sidebar__status-text {
+  color: #475569;
+}
+
+.workspace--light .layer-switch__label {
+  color: #334155;
+}
+
+.workspace--light .layer-switch__label--bright {
+  color: #0f172a;
+}
+
+.workspace--light .layer-switch__toggle {
+  background-color: #cbd5e1;
+}
+
+.workspace--light .layer-switch__toggle--on {
+  background-color: #2563eb;
+}
+
+.workspace--light .sidebar [class*="border-slate-700"],
+.workspace--light .sidebar [class*="border-slate-800"] {
+  border-color: #cbd5e1;
+}
+
+.workspace--light .sidebar [class*="bg-slate-900"],
+.workspace--light .sidebar [class*="bg-slate-950"] {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+.workspace--light .sidebar [class*="text-slate-100"],
+.workspace--light .sidebar [class*="text-slate-200"] {
+  color: #0f172a;
+}
+
+.workspace--light .sidebar [class*="text-slate-300"],
+.workspace--light .sidebar [class*="text-slate-400"] {
+  color: #475569;
+}
+
+.workspace--light .toolbar {
+  border-color: #cbd5e1;
+  background-color: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.14);
+}
+
+.workspace--light .divider-vertical {
+  background-color: #e2e8f0;
+}
+
+.workspace--light .tool-button {
+  color: #334155;
+}
+
+.workspace--light .tool-button:hover {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+.workspace--light .tool-button__label {
+  color: #475569;
+}
+
+.workspace--light .tool-button--active {
+  background-color: #e0e7ff;
+  color: #3730a3;
+}
+
+.workspace--light .tool-button--active .tool-button__label {
+  color: #312e81;
+}
+
+.workspace--light .tool-button--snap-on {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.workspace--light .tool-button--snap-on .tool-button__label--snap {
+  color: #065f46;
+}
+
+.workspace--light .tool-hint {
+  border-color: #cbd5e1;
+  background-color: rgba(255, 255, 255, 0.95);
+  color: #1e293b;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.12);
+}
+
+.workspace--light .map-stats {
+  border-color: #cbd5e1;
+  background-color: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.14);
+}
+
+.workspace--light .map-stats__label {
+  color: #64748b;
+}
+
+.workspace--light .map-stats__value {
+  color: #0f172a;
+}
+
+.workspace--light .map-stats__unit {
+  color: #475569;
+}
+
+.workspace--light .map-stats__legend-pill {
+  border-color: #e2e8f0;
+  background-color: #f1f5f9;
+  color: #1e293b;
+}
+
+.workspace--light .map-controls__compass,
+.workspace--light .map-controls__zoom,
+.workspace--light .map-controls__fit {
+  border-color: #cbd5e1;
+  background-color: rgba(255, 255, 255, 0.95);
+  color: #1e293b;
+}
+
+.workspace--light .map-controls__compass:hover,
+.workspace--light .map-controls__zoom:hover,
+.workspace--light .map-controls__fit:hover {
+  background-color: #f1f5f9;
+  color: #0284c7;
+}
+
+.workspace--light .zoom-level-label {
+  color: #334155;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.9);
+}
+
+.workspace--light .scale-bar__line {
+  border-color: #334155;
+}
+
+.workspace--light .scale-bar__label {
+  color: #0f172a;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.9);
+}
+
+.workspace--light .quick-guide-card,
+.workspace--light .gis-inspector-card {
+  border-color: #cbd5e1;
+  background-color: rgba(255, 255, 255, 0.96);
+  color: #1e293b;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
+}
+
+.workspace--light .quick-guide-card strong,
+.workspace--light .gis-inspector-card [class*="text-white"],
+.workspace--light .gis-inspector-card [class*="text-slate-100"],
+.workspace--light .gis-inspector-card [class*="text-slate-200"] {
+  color: #0f172a;
+}
+
+.workspace--light .quick-guide-card [class*="text-slate-300"],
+.workspace--light .gis-inspector-card [class*="text-slate-300"],
+.workspace--light .gis-inspector-card [class*="text-slate-400"] {
+  color: #475569;
+}
+
+.workspace--light .gis-inspector-card [class*="text-cyan-400"] {
+  color: #0284c7;
+}
+
+.workspace--light .gis-inspector-card [class*="border-slate-800"],
+.workspace--light .quick-guide-card [class*="border-slate-800"] {
+  border-color: #e2e8f0;
+}
+
+.workspace--light .gis-inspector-card input,
+.workspace--light .gis-inspector-card select {
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+.workspace--light .gis-inspector-card [class*="bg-slate-950"] {
+  background-color: #f8fafc;
+}
+
+.workspace--light .gis-inspector-card [class*="text-emerald-400"] {
+  color: #059669;
+}
+
+.workspace--light .workspace-theme-btn {
+  border-color: #cbd5e1;
+  background-color: #f8fafc;
+  color: #1e293b;
+}
+
+.workspace--light .workspace-theme-btn:hover {
+  background-color: #e2e8f0;
+}
+
+.workspace--light .workspace-theme-btn svg {
+  color: #d97706;
 }

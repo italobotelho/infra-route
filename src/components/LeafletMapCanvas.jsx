@@ -3,6 +3,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 const CARTO_DARK_TILES = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const CARTO_LIGHT_TILES = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
 const OSM_FALLBACK_TILES = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
 const TOOL_EQUIPMENT_SET = new Set(["pole", "cto", "ceo", "olt"]);
@@ -21,8 +22,13 @@ function getMarkerTypeDescription(idTipoEquipamento) {
   return "Poste de Passagem · R$ 0,00";
 }
 
-function getCableStrokeColor(trecho) {
+function getCableStrokeColor(trecho, theme = "dark") {
   const modelo = (trecho?.modelo_cabo || "").toUpperCase();
+  if (theme === "light") {
+    if (modelo.includes("AS-200") || trecho?.id_tipo_cabo === 3) return "#d97706";
+    if (modelo.includes("AS-120") || trecho?.id_tipo_cabo === 2) return "#7c3aed";
+    return "#0284c7";
+  }
   if (modelo.includes("AS-200") || trecho?.id_tipo_cabo === 3) return "#f59e0b";
   if (modelo.includes("AS-120") || trecho?.id_tipo_cabo === 2) return "#a855f7";
   return "#38bdf8";
@@ -48,12 +54,14 @@ function createPoleDivIcon(pole, selected, tool) {
 export function LeafletMapCanvas({
   center,
   defaultZoom,
+  theme = "dark",
   tool,
   isReadOnly = false,
   poles,
   trechos = [],
   selectedIds,
   selectedTrecho,
+  highlightedTrechoIds = [],
   lassoStart = null,
   searchResult,
   onMapReady,
@@ -63,23 +71,32 @@ export function LeafletMapCanvas({
   onMovePole,
   onSelectPole,
   onSelectTrecho,
+  onSelectLassoBounds,
   onClearSelection,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
+  const tileLayerRef = useRef(null);
+  const switchedToFallbackRef = useRef(false);
+  const initialThemeRef = useRef(theme);
   const markersRef = useRef(new Map());
   const polylinesRef = useRef([]);
   const searchMarkerRef = useRef(null);
   const lassoMarkerRef = useRef(null);
+  const lassoRectRef = useRef(null);
+  const lassoDragRef = useRef(null);
+  const suppressLassoClickRef = useRef(false);
   const handlersRef = useRef({});
 
   handlersRef.current = {
     tool,
     isReadOnly,
+    lassoStart,
     onAddPole,
     onMovePole,
     onSelectPole,
     onSelectTrecho,
+    onSelectLassoBounds,
     onClearSelection,
   };
 
@@ -95,19 +112,22 @@ export function LeafletMapCanvas({
       attributionControl: false,
     });
 
-    const tileLayer = L.tileLayer(CARTO_DARK_TILES, {
+    const initialTileUrl =
+      initialThemeRef.current === "light" ? CARTO_LIGHT_TILES : CARTO_DARK_TILES;
+    const tileLayer = L.tileLayer(initialTileUrl, {
       subdomains: "abcd",
       maxZoom: 20,
     });
 
-    let switchedToFallback = false;
+    switchedToFallbackRef.current = false;
     tileLayer.on("tileerror", () => {
-      if (!switchedToFallback) {
-        switchedToFallback = true;
+      if (!switchedToFallbackRef.current) {
+        switchedToFallbackRef.current = true;
         tileLayer.setUrl(OSM_FALLBACK_TILES);
       }
     });
     tileLayer.addTo(leafletMap);
+    tileLayerRef.current = tileLayer;
 
     const emitView = () => {
       const currentCenter = leafletMap.getCenter();
@@ -117,8 +137,92 @@ export function LeafletMapCanvas({
       });
     };
 
+    const clearLassoRect = () => {
+      if (lassoRectRef.current) {
+        lassoRectRef.current.remove();
+        lassoRectRef.current = null;
+      }
+    };
+
+    const drawLassoRect = (start, end) => {
+      const south = Math.min(start.lat, end.lat);
+      const north = Math.max(start.lat, end.lat);
+      const west = Math.min(start.lng, end.lng);
+      const east = Math.max(start.lng, end.lng);
+      const bounds = [
+        [south, west],
+        [north, east],
+      ];
+      if (!lassoRectRef.current) {
+        lassoRectRef.current = L.rectangle(bounds, {
+          color: "#22d3ee",
+          weight: 2,
+          dashArray: "6 4",
+          fillColor: "#22d3ee",
+          fillOpacity: 0.22,
+          interactive: false,
+          className: "lasso-rect-animated",
+        }).addTo(leafletMap);
+      } else {
+        lassoRectRef.current.setBounds(bounds);
+      }
+    };
+
     leafletMap.on("zoomend moveend", emitView);
+    leafletMap.on("mousedown", (event) => {
+      if (handlersRef.current.tool !== "lasso" || event.originalEvent?.button !== 0) return;
+      const start = { lat: event.latlng.lat, lng: event.latlng.lng };
+      lassoDragRef.current = {
+        start,
+        last: start,
+        startX: event.originalEvent.clientX,
+        startY: event.originalEvent.clientY,
+        moved: false,
+      };
+    });
+
+    leafletMap.on("mousemove", (event) => {
+      if (handlersRef.current.tool !== "lasso") return;
+      const current = { lat: event.latlng.lat, lng: event.latlng.lng };
+      const drag = lassoDragRef.current;
+      if (drag) {
+        const dist = Math.hypot(
+          event.originalEvent.clientX - drag.startX,
+          event.originalEvent.clientY - drag.startY,
+        );
+        if (dist >= 5) drag.moved = true;
+        drag.last = current;
+        if (drag.moved) {
+          drawLassoRect(drag.start, current);
+        }
+      } else if (handlersRef.current.lassoStart) {
+        drawLassoRect(handlersRef.current.lassoStart, current);
+      }
+    });
+
+    const finishDragLasso = () => {
+      const drag = lassoDragRef.current;
+      if (!drag) return;
+      lassoDragRef.current = null;
+      if (!drag.moved) return;
+      suppressLassoClickRef.current = true;
+      window.setTimeout(() => {
+        suppressLassoClickRef.current = false;
+      }, 0);
+      clearLassoRect();
+      handlersRef.current.onSelectLassoBounds?.({
+        south: Math.min(drag.start.lat, drag.last.lat),
+        north: Math.max(drag.start.lat, drag.last.lat),
+        west: Math.min(drag.start.lng, drag.last.lng),
+        east: Math.max(drag.start.lng, drag.last.lng),
+      });
+    };
+
+    leafletMap.on("mouseup", finishDragLasso);
+    window.addEventListener("mouseup", finishDragLasso);
+
     leafletMap.on("click", (event) => {
+      if (suppressLassoClickRef.current) return;
       const {
         tool: activeTool,
         isReadOnly: readOnly,
@@ -168,22 +272,46 @@ export function LeafletMapCanvas({
     emitView();
 
     return () => {
+      window.removeEventListener("mouseup", finishDragLasso);
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current.clear();
       polylinesRef.current.forEach((line) => line.remove());
       polylinesRef.current = [];
       searchMarkerRef.current?.remove();
       lassoMarkerRef.current?.remove();
+      clearLassoRect();
+      tileLayerRef.current = null;
       leafletMap.remove();
       mapRef.current = null;
     };
   }, [center.lat, center.lng, defaultZoom, onMapReady, onStatusChange, onViewChange]);
 
   useEffect(() => {
+    const tileLayer = tileLayerRef.current;
+    if (!tileLayer) return;
+    switchedToFallbackRef.current = false;
+    tileLayer.setUrl(theme === "light" ? CARTO_LIGHT_TILES : CARTO_DARK_TILES);
+  }, [theme]);
+
+  useEffect(() => {
     const el = containerRef.current;
-    if (!el) return;
-    const isCrosshair = (!isReadOnly && TOOL_EQUIPMENT_SET.has(tool)) || tool === "lasso";
-    el.dataset.cursorTool = isCrosshair ? "crosshair" : "grab";
+    const leafletMap = mapRef.current;
+    if (el) {
+      const isCrosshair = (!isReadOnly && TOOL_EQUIPMENT_SET.has(tool)) || tool === "lasso";
+      el.dataset.cursorTool = isCrosshair ? "crosshair" : "grab";
+    }
+    if (leafletMap) {
+      if (tool === "lasso") {
+        leafletMap.dragging.disable();
+      } else {
+        leafletMap.dragging.enable();
+        lassoDragRef.current = null;
+        if (lassoRectRef.current) {
+          lassoRectRef.current.remove();
+          lassoRectRef.current = null;
+        }
+      }
+    }
   }, [tool, isReadOnly]);
 
   useEffect(() => {
@@ -267,9 +395,11 @@ export function LeafletMapCanvas({
               [dest.lat, dest.lng],
             ];
 
-      const isSelected = selectedTrecho?.id_trecho === trecho.id_trecho;
+      const isSelected =
+        selectedTrecho?.id_trecho === trecho.id_trecho ||
+        highlightedTrechoIds.includes(trecho.id_trecho);
       const line = L.polyline(latlngs, {
-        color: isSelected ? "#22d3ee" : getCableStrokeColor(trecho),
+        color: isSelected ? "#22d3ee" : getCableStrokeColor(trecho, theme),
         opacity: isSelected ? 1.0 : 0.92,
         weight: isSelected ? 5 : 3.5,
       }).addTo(leafletMap);
@@ -281,7 +411,7 @@ export function LeafletMapCanvas({
 
       polylinesRef.current.push(line);
     });
-  }, [poles, trechos, selectedTrecho]);
+  }, [poles, trechos, selectedTrecho, highlightedTrechoIds, theme]);
 
   useEffect(() => {
     const leafletMap = mapRef.current;
@@ -290,7 +420,13 @@ export function LeafletMapCanvas({
       lassoMarkerRef.current.remove();
       lassoMarkerRef.current = null;
     }
-    if (!lassoStart) return;
+    if (!lassoStart) {
+      if (!lassoDragRef.current && lassoRectRef.current) {
+        lassoRectRef.current.remove();
+        lassoRectRef.current = null;
+      }
+      return;
+    }
     const lassoIcon = L.divIcon({
       className: "leaflet-search-wrapper",
       iconSize: [16, 16],

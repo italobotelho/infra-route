@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { apiRequest, getSession } from "../../lib/api";
+import { BrandLogo } from "../../components/BrandLogo";
 import { LeafletMapCanvas } from "../../components/LeafletMapCanvas";
 import { LiveAuditDrawer } from "../../components/LiveAuditDrawer";
+import { Modal } from "../../components/ui/Modal";
 import { ProjectReportModal } from "../../components/ProjectReportModal";
 import { QuickPersonaSwitcher } from "../../components/QuickPersonaSwitcher";
+import { ThemeToggle, useTheme } from "../../components/ThemeProvider";
 import { ehPerfilSomenteLeituraProjetos } from "../../utils/sessionVault";
 import { useToast } from "../../components/ToastProvider";
 import {
@@ -217,6 +220,23 @@ const MAP_STYLES = [
   { featureType: "road", elementType: "labels.text.stroke", stylers: [{ color: BG }] },
 ];
 
+const LIGHT_BG = "#e2e8f0";
+const LIGHT_MAP_STYLES = [
+  { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+  { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
+  { featureType: "transit", stylers: [{ visibility: "off" }] },
+  { featureType: "administrative", elementType: "labels", stylers: [{ visibility: "off" }] },
+  { featureType: "water", elementType: "labels", stylers: [{ visibility: "off" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#bae6fd" }] },
+  { featureType: "landscape", elementType: "geometry", stylers: [{ color: "#f1f5f9" }] },
+  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#dcfce7" }] },
+  { featureType: "road", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
+  { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: "#e2e8f0" }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#cbd5e1" }] },
+  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#334155" }] },
+  { featureType: "road", elementType: "labels.text.stroke", stylers: [{ color: "#ffffff" }] },
+];
+
 const toolItems = [
   {
     id: "select",
@@ -353,13 +373,49 @@ const TOOL_EQUIPMENT_CONFIG = {
 };
 
 const CABLE_PRESETS = {
-  "AS-80 12 FO": { id_cabo: 1, descricao_modelo: "Fibra AS-80 12FO", price: 4.5, maxSpan: 2000, color: "#38bdf8" },
-  "AS-120 24 FO": { id_cabo: 2, descricao_modelo: "Fibra AS-120 24FO", price: 6.8, maxSpan: 5000, color: "#a855f7" },
-  "AS-200 48 FO": { id_cabo: 3, descricao_modelo: "Fibra AS-200 48FO", price: 9.5, maxSpan: 10000, color: "#f59e0b" },
+  "AS-80 12 FO": { id_cabo: 1, descricao_modelo: "Fibra AS-80 12FO", price: 4.5, maxSpan: 2000, color: "#38bdf8", swatchClass: "cable-swatch--as80" },
+  "AS-120 24 FO": { id_cabo: 2, descricao_modelo: "Fibra AS-120 24FO", price: 6.8, maxSpan: 5000, color: "#a855f7", swatchClass: "cable-swatch--as120" },
+  "AS-200 48 FO": { id_cabo: 3, descricao_modelo: "Fibra AS-200 48FO", price: 9.5, maxSpan: 10000, color: "#f59e0b", swatchClass: "cable-swatch--as200" },
 };
 
-function getCableStrokeColor(trecho) {
+const DEFAULT_CABLE_CATALOG = Object.entries(CABLE_PRESETS).map(([key, preset]) => ({
+  key,
+  id_cabo: preset.id_cabo,
+  descricao_modelo: preset.descricao_modelo,
+  swatchClass: preset.swatchClass,
+  enabled: true,
+  price: preset.price,
+  maxSpan: preset.maxSpan,
+}));
+
+function buildInitialCableCatalog(savedConfig) {
+  const savedList = Array.isArray(savedConfig?.cableCatalog) ? savedConfig.cableCatalog : null;
+  if (!savedList) return DEFAULT_CABLE_CATALOG;
+  const merged = DEFAULT_CABLE_CATALOG.map((base) => {
+    const match = savedList.find((item) => item?.key === base.key || item?.id_cabo === base.id_cabo);
+    if (!match) return base;
+    const parsedPrice = Number(match.price);
+    const parsedSpan = Number(match.maxSpan);
+    return {
+      ...base,
+      enabled: typeof match.enabled === "boolean" ? match.enabled : base.enabled,
+      price: Number.isFinite(parsedPrice) && parsedPrice >= 0 ? parsedPrice : base.price,
+      maxSpan: Number.isFinite(parsedSpan) && parsedSpan > 0 ? parsedSpan : base.maxSpan,
+    };
+  });
+  if (!merged.some((item) => item.enabled)) {
+    merged[0].enabled = true;
+  }
+  return merged;
+}
+
+function getCableStrokeColor(trecho, theme = "dark") {
   const modelo = (trecho?.modelo_cabo || "").toUpperCase();
+  if (theme === "light") {
+    if (modelo.includes("AS-200") || trecho?.id_tipo_cabo === 3) return "#d97706";
+    if (modelo.includes("AS-120") || trecho?.id_tipo_cabo === 2) return "#7c3aed";
+    return "#0284c7";
+  }
   if (modelo.includes("AS-200") || trecho?.id_tipo_cabo === 3) return "#f59e0b";
   if (modelo.includes("AS-120") || trecho?.id_tipo_cabo === 2) return "#a855f7";
   return "#38bdf8";
@@ -559,12 +615,14 @@ function createPoleEntry(map, pole, handlersRef) {
 
 function MapCanvas({
   map,
+  theme = "dark",
   tool,
   isReadOnly = false,
   poles,
   trechos = [],
   selectedIds,
   selectedTrecho,
+  highlightedTrechoIds = [],
   lassoStart = null,
   searchResult,
   onMapReady,
@@ -574,6 +632,7 @@ function MapCanvas({
   onMovePole,
   onSelectPole,
   onSelectTrecho,
+  onSelectLassoBounds,
   onClearSelection,
 }) {
   const containerRef = useRef(null);
@@ -581,10 +640,13 @@ function MapCanvas({
   const polylinesRef = useRef([]);
   const searchOverlayRef = useRef(null);
   const lassoOverlayRef = useRef(null);
+  const lassoRectRef = useRef(null);
+  const lassoDragRef = useRef(null);
+  const suppressLassoClickRef = useRef(false);
   const handlersRef = useRef({});
   const [error, setError] = useState("");
 
-  handlersRef.current = { tool, isReadOnly, onMovePole, onSelectPole };
+  handlersRef.current = { tool, isReadOnly, lassoStart, onMovePole, onSelectPole, onSelectLassoBounds };
 
   // Cria o mapa uma única vez.
   useEffect(() => {
@@ -616,8 +678,8 @@ function MapCanvas({
           zoom: DEFAULT_ZOOM,
           minZoom: 10,
           maxZoom: 21,
-          styles: MAP_STYLES,
-          backgroundColor: BG,
+          styles: theme === "light" ? LIGHT_MAP_STYLES : MAP_STYLES,
+          backgroundColor: theme === "light" ? LIGHT_BG : BG,
           disableDefaultUI: true,
           clickableIcons: false,
           gestureHandling: "greedy",
@@ -643,17 +705,132 @@ function MapCanvas({
     };
   }, [onMapReady, onViewChange, onStatusChange]);
 
-  // Cursor do mapa de acordo com a ferramenta.
+  useEffect(() => {
+    if (!map) return;
+    map.setOptions({
+      styles: theme === "light" ? LIGHT_MAP_STYLES : MAP_STYLES,
+      backgroundColor: theme === "light" ? LIGHT_BG : BG,
+    });
+  }, [map, theme]);
+
+  // Cursor e arraste do mapa de acordo com a ferramenta.
   useEffect(() => {
     if (!map) return;
     const isPlacementOrLasso = (!isReadOnly && Boolean(TOOL_EQUIPMENT_CONFIG[tool])) || tool === "lasso";
-    map.setOptions({ draggableCursor: isPlacementOrLasso ? "crosshair" : null });
+    map.setOptions({
+      draggableCursor: isPlacementOrLasso ? "crosshair" : null,
+      draggable: tool !== "lasso",
+    });
+    if (tool !== "lasso") {
+      lassoDragRef.current = null;
+      if (lassoRectRef.current) {
+        lassoRectRef.current.setMap(null);
+        lassoRectRef.current = null;
+      }
+    }
   }, [map, tool, isReadOnly]);
+
+  // Seleção dinâmica em caixa (arraste ou 2 cliques com preview preenchido).
+  useEffect(() => {
+    if (!map || !window.google?.maps?.Rectangle) return undefined;
+
+    const clearLassoRect = () => {
+      if (lassoRectRef.current) {
+        lassoRectRef.current.setMap(null);
+        lassoRectRef.current = null;
+      }
+    };
+
+    const drawLassoRect = (start, end) => {
+      const bounds = {
+        south: Math.min(start.lat, end.lat),
+        north: Math.max(start.lat, end.lat),
+        west: Math.min(start.lng, end.lng),
+        east: Math.max(start.lng, end.lng),
+      };
+      if (!lassoRectRef.current) {
+        lassoRectRef.current = new window.google.maps.Rectangle({
+          bounds,
+          strokeColor: "#22d3ee",
+          strokeOpacity: 0.95,
+          strokeWeight: 2,
+          fillColor: "#22d3ee",
+          fillOpacity: 0.22,
+          clickable: false,
+          zIndex: 20,
+          map,
+        });
+      } else {
+        lassoRectRef.current.setBounds(bounds);
+      }
+    };
+
+    const downListener = map.addListener("mousedown", (event) => {
+      if (handlersRef.current.tool !== "lasso" || !event.latLng) return;
+      if (event.domEvent && event.domEvent.button !== 0) return;
+      const start = event.latLng.toJSON();
+      lassoDragRef.current = {
+        start,
+        last: start,
+        startX: event.domEvent?.clientX ?? 0,
+        startY: event.domEvent?.clientY ?? 0,
+        moved: false,
+      };
+    });
+
+    const moveListener = map.addListener("mousemove", (event) => {
+      if (handlersRef.current.tool !== "lasso" || !event.latLng) return;
+      const current = event.latLng.toJSON();
+      const drag = lassoDragRef.current;
+      if (drag) {
+        const dist = event.domEvent
+          ? Math.hypot(event.domEvent.clientX - drag.startX, event.domEvent.clientY - drag.startY)
+          : 8;
+        if (dist >= 5) drag.moved = true;
+        drag.last = current;
+        if (drag.moved) {
+          drawLassoRect(drag.start, current);
+        }
+      } else if (handlersRef.current.lassoStart) {
+        drawLassoRect(handlersRef.current.lassoStart, current);
+      }
+    });
+
+    const finishDragLasso = () => {
+      const drag = lassoDragRef.current;
+      if (!drag) return;
+      lassoDragRef.current = null;
+      if (!drag.moved) return;
+      suppressLassoClickRef.current = true;
+      window.setTimeout(() => {
+        suppressLassoClickRef.current = false;
+      }, 0);
+      clearLassoRect();
+      handlersRef.current.onSelectLassoBounds?.({
+        south: Math.min(drag.start.lat, drag.last.lat),
+        north: Math.max(drag.start.lat, drag.last.lat),
+        west: Math.min(drag.start.lng, drag.last.lng),
+        east: Math.max(drag.start.lng, drag.last.lng),
+      });
+    };
+
+    const upListener = map.addListener("mouseup", finishDragLasso);
+    window.addEventListener("mouseup", finishDragLasso);
+
+    return () => {
+      downListener.remove();
+      moveListener.remove();
+      upListener.remove();
+      window.removeEventListener("mouseup", finishDragLasso);
+      clearLassoRect();
+    };
+  }, [map]);
 
   // Clique no mapa: adiciona ativo (P, C, E, O), seleciona em caixa (L) ou limpa a seleção (V).
   useEffect(() => {
     if (!map) return;
     const listener = map.addListener("click", (event) => {
+      if (suppressLassoClickRef.current) return;
       if (!isReadOnly && TOOL_EQUIPMENT_CONFIG[tool] && event.latLng) {
         onAddPole(event.latLng.toJSON(), tool);
       } else if (tool === "lasso" && event.latLng) {
@@ -728,8 +905,10 @@ function MapCanvas({
               { lat: dest.lat, lng: dest.lng },
             ];
 
-      const isSelected = selectedTrecho?.id_trecho === trecho.id_trecho;
-      const baseColor = getCableStrokeColor(trecho);
+      const isSelected =
+        selectedTrecho?.id_trecho === trecho.id_trecho ||
+        highlightedTrechoIds.includes(trecho.id_trecho);
+      const baseColor = getCableStrokeColor(trecho, theme);
 
       const line = new window.google.maps.Polyline({
         path,
@@ -749,7 +928,7 @@ function MapCanvas({
 
       polylinesRef.current.push(line);
     });
-  }, [map, poles, trechos, selectedTrecho, onSelectTrecho]);
+  }, [map, poles, trechos, selectedTrecho, highlightedTrechoIds, onSelectTrecho, theme]);
 
   useEffect(() => {
     if (!map) return;
@@ -787,7 +966,13 @@ function MapCanvas({
       lassoOverlayRef.current.setMap(null);
       lassoOverlayRef.current = null;
     }
-    if (!lassoStart) return;
+    if (!lassoStart) {
+      if (!lassoDragRef.current && lassoRectRef.current) {
+        lassoRectRef.current.setMap(null);
+        lassoRectRef.current = null;
+      }
+      return;
+    }
     const Overlay = getElementOverlayClass();
     const element = document.createElement("div");
     element.className = "lasso-pin";
@@ -971,15 +1156,17 @@ function ToolHint({ tool, isReadOnly = false, selectedCount, snapEnabled, lassoS
   } else if (tool === "lasso") {
     text = lassoStart ? (
       <>
-        Lasso: clique no 2º canto do retângulo para selecionar os ativos da área · <kbd>Esc</kbd> cancela
+        Lasso: mova o cursor para formar a área e clique no 2º canto · <kbd>Esc</kbd> cancela
       </>
     ) : (
-      "Lasso: clique no 1º canto no mapa para abrir uma caixa de seleção múltipla"
+      <>
+        Lasso: clique e arraste no mapa (ou clique em 2 cantos) para selecionar ativos · <kbd>Esc</kbd> cancela
+      </>
     );
   } else if (tool === "cable") {
     text = cableOriginId
-      ? `Cabo: origem #${cableOriginId} selecionada · clique no ativo de destino para inspecionar o enlace`
-      : "Cabo: clique no ativo de origem e depois no destino para inspecionar o trecho óptico";
+      ? `Cabo: origem #${cableOriginId} selecionada · clique em qualquer ativo de destino para traçar a rota`
+      : "Cabo: clique em dois ativos (adjacentes ou distantes) para inspecionar o enlace ou rota completa";
   } else if (tool === "select") {
     text =
       selectedCount > 0 ? (
@@ -1021,72 +1208,66 @@ function MapStats({
   const ceoCount = poles.filter((p) => p.id_tipo_equipamento === 2).length;
   const oltCount = poles.filter((p) => p.id_tipo_equipamento === 3).length;
 
+  const costTooltip =
+    custoCabos > 0 || custoEquipamentos > 0
+      ? `Cabos: ${custoCabos.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} · Equip.: ${custoEquipamentos.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`
+      : undefined;
+
   return (
     <aside className="map-stats" aria-label="Métricas e legenda da malha óptica">
       <div className="map-stats__group">
-        <span className="map-stats__label">
-          Distância Total Acumulada
-        </span>
+        <span className="map-stats__label">Extensão</span>
         <span className="map-stats__value-row">
           <strong className="map-stats__value">
             {(distanceMeters / 1000).toFixed(2)}
           </strong>
-          <span className="map-stats__unit">
-            km ({distanceMeters.toFixed(1)} m)
-          </span>
+          <span className="map-stats__unit">km</span>
         </span>
       </div>
       <span className="divider-vertical" aria-hidden="true" />
-      <div className="map-stats__group">
-        <span className="map-stats__label">
-          Custo Estimado da Obra
-        </span>
+      <div className="map-stats__group" title={costTooltip}>
+        <span className="map-stats__label">CAPEX Estimado</span>
         <strong className="map-stats__value">
           {estimatedCost.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
         </strong>
-        {(custoCabos > 0 || custoEquipamentos > 0) && (
-          <span className="text-[10px] text-slate-300">
-            Cabos: {custoCabos.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} · Equip.:{" "}
-            {custoEquipamentos.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-          </span>
-        )}
       </div>
       <span className="divider-vertical" aria-hidden="true" />
       <div className="map-stats__group map-stats__group--counts">
         <ul className="map-stats__legend-list" aria-label="Contagem de ativos por tipo">
-          <li className="map-stats__legend-pill" title="Poste de Passagem (P) · R$ 0,00">
-            <span className="asset-dot asset-dot--pole" aria-hidden="true" />
-            <span>{purePoles} {purePoles === 1 ? "Poste" : "Postes"} (P)</span>
-          </li>
-          <li className="map-stats__legend-pill" title="Caixa de Terminação Óptica (CTO) · R$ 380,00">
-            <span className="asset-dot asset-dot--cto" aria-hidden="true" />
-            <span>{ctoCount} CTOs</span>
-          </li>
-          <li className="map-stats__legend-pill" title="Caixa de Emenda Óptica (CEO) · R$ 520,00">
-            <span className="asset-dot asset-dot--ceo" aria-hidden="true" />
-            <span>{ceoCount} CEOs</span>
-          </li>
+          {purePoles > 0 && (
+            <li className="map-stats__legend-pill" title="Poste de Passagem (P) · R$ 0,00">
+              <span className="asset-dot asset-dot--pole" aria-hidden="true" />
+              <span>{purePoles} {purePoles === 1 ? "Poste" : "Postes"}</span>
+            </li>
+          )}
+          {ctoCount > 0 && (
+            <li className="map-stats__legend-pill" title="Caixa de Terminação Óptica (CTO) · R$ 380,00">
+              <span className="asset-dot asset-dot--cto" aria-hidden="true" />
+              <span>{ctoCount} CTO</span>
+            </li>
+          )}
+          {ceoCount > 0 && (
+            <li className="map-stats__legend-pill" title="Caixa de Emenda Óptica (CEO) · R$ 520,00">
+              <span className="asset-dot asset-dot--ceo" aria-hidden="true" />
+              <span>{ceoCount} CEO</span>
+            </li>
+          )}
           {oltCount > 0 && (
             <li className="map-stats__legend-pill" title="Switch / OLT Central · R$ 2.450,00">
               <span className="asset-dot asset-dot--olt" aria-hidden="true" />
-              <span>{oltCount} OLTs</span>
+              <span>{oltCount} OLT</span>
             </li>
           )}
-        </ul>
-        <span className="map-stats__savings">
-          <span className="text-emerald-400">
-            <WorkspaceIcon name="savings" className="icon-13" />
-          </span>
-          {poles.length < 3 ? (
-            <span className="map-stats__savings-text map-stats__savings-text--hint">
-              Adicione 3+ ativos para poda de ciclos (<abbr title="Árvore Geradora Mínima">AGM</abbr> Prim)
-            </span>
-          ) : (
-            <span className="map-stats__savings-text">
-              {Number(savingsPercent || 0).toFixed(1)}% economia de material (<abbr title="Árvore Geradora Mínima">AGM</abbr> Prim)
-            </span>
+          {poles.length >= 3 && (
+            <li className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-950/50 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
+              <WorkspaceIcon name="savings" className="icon-13" />
+              <span>{Number(savingsPercent || 0).toFixed(1)}% AGM</span>
+            </li>
           )}
-        </span>
+          {poles.length === 0 && (
+            <li className="text-[11px] text-slate-400">Nenhum ativo no mapa</li>
+          )}
+        </ul>
       </div>
     </aside>
   );
@@ -1207,54 +1388,182 @@ function LayerSwitch({ layer, enabled, onToggle }) {
   );
 }
 
-function Sidebar({
-  poles,
-  poleCount,
-  selectedCount,
-  trechoCount,
-  isReadOnly = false,
-  canChangeStatus = false,
-  companyProjects = [],
+function WorkspaceTopbar({
+  projectName,
+  projectStatus,
+  isReadOnly,
+  canChangeStatus,
+  isUpdatingProjectStatus,
+  companyProjects,
   currentProjectId,
   onSwitchProject,
   onChangeProjectStatus,
-  isUpdatingProjectStatus = false,
-  projectStatus,
+  canCalculate,
+  onOpenGraphModal,
+  onOpenReportModal,
+  sidebarOpen,
+  onToggleSidebar,
+  showQuickGuide,
+  onToggleQuickGuide,
+}) {
+  return (
+    <header className="workspace-topbar">
+      <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
+        <Link
+          to="/projetos"
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-2.5 text-xs font-semibold text-slate-100 transition hover:border-indigo-500 hover:bg-slate-800 hover:text-white"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="h-3.5 w-3.5" aria-hidden="true">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+          <span>Voltar</span>
+        </Link>
+
+        <button
+          type="button"
+          onClick={onToggleSidebar}
+          aria-expanded={sidebarOpen}
+          aria-label={sidebarOpen ? "Recolher painel de engenharia" : "Abrir painel de engenharia"}
+          title={sidebarOpen ? "Recolher painel lateral" : "Abrir painel lateral"}
+          className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900 px-2.5 text-xs font-medium text-slate-300 transition hover:bg-slate-800 hover:text-white"
+        >
+          <WorkspaceIcon name="params" className="h-3.5 w-3.5 text-indigo-400" />
+          <span className="hidden md:inline">{sidebarOpen ? "Ocultar Painel" : "Painel"}</span>
+        </button>
+
+        <span className="hidden h-5 w-px bg-slate-800 sm:inline-block" aria-hidden="true" />
+
+        <div className="flex min-w-0 items-center gap-2">
+          <BrandLogo size="xs" className="hidden sm:block" />
+          {companyProjects.length > 1 ? (
+            <div className="min-w-0">
+              <h1 className="sr-only">{projectName || "Workspace GIS"}</h1>
+              <label htmlFor="switch-project" className="sr-only">
+                Projeto ativo
+              </label>
+              <select
+                id="switch-project"
+                value={String(currentProjectId || "")}
+                onChange={(e) => onSwitchProject?.(Number(e.target.value))}
+                className="h-8 max-w-[180px] truncate rounded-lg border border-slate-700 bg-slate-900 px-2.5 text-xs font-semibold text-slate-100 focus:border-indigo-500 focus:outline-none sm:max-w-[260px]"
+              >
+                {companyProjects.map((proj) => (
+                  <option key={proj.id_projeto} value={String(proj.id_projeto)}>
+                    IR-{String(proj.id_projeto).padStart(4, "0")} · {proj.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <h1 className="max-w-[180px] truncate text-sm font-semibold text-slate-50 sm:max-w-[260px]">
+              {projectName || "Carregando projeto..."}
+            </h1>
+          )}
+
+          <div className="hidden sm:block">
+            <label htmlFor="switch-project-status" className="sr-only">
+              Status do projeto
+            </label>
+            <select
+              id="switch-project-status"
+              disabled={!canChangeStatus || isUpdatingProjectStatus || !projectStatus}
+              value={projectStatus || "Em Planejamento"}
+              onChange={(e) => onChangeProjectStatus?.(e.target.value)}
+              className="h-8 rounded-lg border border-slate-700 bg-slate-900 px-2 text-[11px] font-medium text-slate-200 disabled:opacity-60"
+            >
+              <option value="Em Planejamento">Em Planejamento</option>
+              <option value="Em Execução">Em Execução</option>
+              <option value="Concluído">Concluído</option>
+              <option value="Cancelado">Cancelado</option>
+            </select>
+          </div>
+
+          {isReadOnly && (
+            <span className="hidden rounded-full border border-amber-500/40 bg-amber-950/60 px-2 py-0.5 text-[10px] font-semibold text-amber-300 xl:inline-flex">
+              🔒 Somente Leitura
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={onOpenGraphModal}
+          disabled={!canCalculate}
+          title="Inspecionar arestas da Árvore Geradora Mínima e lista de adjacência"
+          className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-2.5 text-xs font-medium text-slate-100 transition hover:border-indigo-500 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40 sm:px-3"
+        >
+          <WorkspaceIcon name="brand" className="h-3.5 w-3.5 text-cyan-400" />
+          <span className="hidden md:inline">Inspecionar Grafo</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onOpenReportModal}
+          disabled={!canCalculate}
+          title="Abrir Memorial Descritivo, Orçamento BOM e exportação GeoJSON/CSV/PDF"
+          className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-indigo-500/60 bg-indigo-600/25 px-2.5 text-xs font-semibold text-indigo-100 transition hover:bg-indigo-600/40 disabled:cursor-not-allowed disabled:opacity-40 sm:px-3"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5 text-indigo-300" aria-hidden="true">
+            <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+            <path d="M14 3v5h5M9 13h6M9 17h4" />
+          </svg>
+          <span>Memorial & BOM</span>
+        </button>
+
+        <ThemeToggle variant="compact" className="workspace-theme-btn" />
+
+        <button
+          type="button"
+          onClick={onToggleQuickGuide}
+          aria-expanded={showQuickGuide}
+          aria-label="Ajuda rápida do Workspace GIS"
+          title="Ajuda rápida do Workspace GIS"
+          className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-slate-700 bg-slate-900 text-slate-200 transition hover:border-indigo-500 hover:bg-slate-800 hover:text-white"
+        >
+          <WorkspaceIcon name="help" className="h-4 w-4 text-indigo-400" />
+        </button>
+
+        <LiveAuditDrawer placement="workspace-top-right" />
+      </div>
+    </header>
+  );
+}
+
+function Sidebar({
+  poles,
+  poleCount,
+  trechoCount,
+  isReadOnly = false,
   searchEnabled,
   searchResult,
   onInsertAtSearch,
   onSearch,
   onClearSearch,
-  projectName,
   canCalculate,
   onCalculate,
   isCalculating,
-  cableType,
-  onCableTypeChange,
-  cablePrice,
-  onCablePriceChange,
-  maxSpan,
-  onMaxSpanChange,
+  cableCatalog,
+  editingCableKey,
+  onSelectEditingCable,
+  onToggleCableEnabled,
+  onUpdateCableField,
   rootNodeId,
   onRootNodeChange,
-  snapEnabled,
   layerState,
   onToggleLayer,
-  onOpenGraphModal,
-  onOpenReportModal,
 }) {
   const [search, setSearch] = useState("");
+  const [activePanelTab, setActivePanelTab] = useState("params");
   const [searchState, setSearchState] = useState({
     message: "",
     error: false,
   });
 
-  const cableSwatchClass =
-    cableType === "AS-200 48 FO"
-      ? "cable-swatch--as200"
-      : cableType === "AS-120 24 FO"
-        ? "cable-swatch--as120"
-        : "cable-swatch--as80";
+  const editingCable =
+    cableCatalog.find((item) => item.key === editingCableKey) || cableCatalog[0];
+  const enabledCablesCount = cableCatalog.filter((item) => item.enabled).length;
 
   const submitSearch = async (event) => {
     event.preventDefault();
@@ -1279,89 +1588,9 @@ function Sidebar({
   };
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" aria-label="Painel de engenharia do mapa">
       <div className="sidebar__panel">
-        <div className="sidebar__header">
-          <div className="brand">
-            <div className="brand__mark">
-              <WorkspaceIcon name="brand" className="brand__mark-icon" />
-            </div>
-            <span className="brand__name">
-              InfraRoute
-            </span>
-            <span className="brand__tag">
-              <abbr title="Geographic Information System (Sistema de Informações Geográficas)">GIS</abbr>
-            </span>
-          </div>
-          <div className="project">
-            <span className="project__eyebrow">
-              WORKSPACE DE ENGENHARIA
-            </span>
-            <h1 className="project__name">
-              {projectName || "Carregando projeto..."}
-            </h1>
-            {companyProjects.length > 1 && (
-              <div className="w-full pt-1">
-                <label htmlFor="switch-project" className="sr-only">
-                  Trocar projeto ativo
-                </label>
-                <select
-                  id="switch-project"
-                  value={String(currentProjectId || "")}
-                  onChange={(e) => onSwitchProject?.(Number(e.target.value))}
-                  className="h-8 w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 text-[11px] font-medium text-slate-200 focus:border-indigo-500 focus:outline-none"
-                >
-                  {companyProjects.map((proj) => (
-                    <option key={proj.id_projeto} value={String(proj.id_projeto)}>
-                      IR-{String(proj.id_projeto).padStart(4, "0")} · {proj.nome}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <div className="grid w-full grid-cols-2 gap-1.5 pt-1">
-              <div className="flex flex-col gap-0.5">
-                <label htmlFor="switch-project-status" className="sr-only">
-                  Status do projeto
-                </label>
-                <select
-                  id="switch-project-status"
-                  disabled={!canChangeStatus || isUpdatingProjectStatus || !projectStatus}
-                  value={projectStatus || "Em Planejamento"}
-                  onChange={(e) => onChangeProjectStatus?.(e.target.value)}
-                  className="h-7 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 text-[10px] font-medium text-slate-200 disabled:opacity-60"
-                >
-                  <option value="Em Planejamento">Em Planejamento</option>
-                  <option value="Em Execução">Em Execução</option>
-                  <option value="Concluído">Concluído</option>
-                  <option value="Cancelado">Cancelado</option>
-                </select>
-              </div>
-              <Link className="flex h-7 items-center justify-center rounded-lg border border-slate-700 bg-slate-900 px-2 text-[10px] font-medium text-indigo-300 hover:bg-slate-800 hover:text-indigo-200" to="/projetos">
-                ← Projetos
-              </Link>
-            </div>
-            <div className="project__badges">
-              <span className={cx("project__badge", snapEnabled && "project__badge--snap-on")}>
-                {snapEnabled ? "Traçado Viário (Snap ON)" : "Geodésico Direto (Snap OFF)"}
-              </span>
-              <span className="project__badge">
-                {poleCount} {poleCount === 1 ? "ativo" : "ativos"}
-                {selectedCount > 0 ? ` · ${selectedCount} sel.` : ""}
-              </span>
-              {isReadOnly && (
-                <span className="project__badge border-amber-500/50 bg-amber-950/60 text-amber-300">
-                  🔒 {projectStatus || "Somente Leitura"}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="divider-horizontal" />
         <div className="sidebar__content">
-          <div className="w-full px-5 pt-3">
-            <QuickPersonaSwitcher variant="compact" />
-          </div>
           <form className="search" onSubmit={submitSearch} role="search">
             <label htmlFor="workspace-search" className="search__field">
               <span className="search__icon">
@@ -1394,171 +1623,260 @@ function Sidebar({
               <button
                 type="button"
                 onClick={onInsertAtSearch}
-                className="mt-2 w-full rounded-lg border border-amber-500/40 bg-amber-950/50 px-3 py-1.5 text-[11px] font-semibold text-amber-200 transition hover:bg-amber-900/60"
+                className="mt-2 w-full cursor-pointer rounded-lg border border-amber-500/40 bg-amber-950/50 px-3 py-1.5 text-[11px] font-semibold text-amber-200 transition hover:bg-amber-900/60"
               >
                 + Inserir ativo neste endereço
               </button>
             )}
           </form>
-          <div className="divider-horizontal" />
-          <section
-            className="panel-section"
-            aria-labelledby="layers-heading"
+
+          <div
+            role="tablist"
+            aria-label="Configurações do Workspace"
+            className="grid w-full shrink-0 grid-cols-2 gap-1 border-y border-slate-800 bg-slate-900/60 px-5 py-2"
           >
-            <div className="panel-section__heading">
-              <span className="text-indigo-400">
-                <WorkspaceIcon name="layers" className="icon-16" />
-              </span>
-              <h2
-                id="layers-heading"
-                className="panel-section__title"
-              >
-                Gerenciador de Camadas
-              </h2>
-            </div>
-            <ul className="layer-list">
-              {layers.map((layer, index) => (
-                <LayerSwitch
-                  key={layer.label}
-                  layer={layer}
-                  enabled={layerState[index]}
-                  onToggle={() => updateLayer(index)}
-                />
-              ))}
-            </ul>
-            <div className="panel-note">
-              <span className="text-slate-400">
-                <WorkspaceIcon name="info" className="icon-13" />
-              </span>
-              <p className="panel-note__text">
-                {poleCount > 0
-                  ? `${poleCount} ativo(s) e ${trechoCount} enlace(s) óptico(s) renderizados no mapa.`
-                  : "Nenhum ativo carregado. Escolha Poste, CTO, CEO ou OLT na barra superior e clique no mapa."}
-              </p>
-            </div>
-          </section>
-          <div className="divider-horizontal" />
-          <section
-            className="panel-section panel-section--spaced"
-            aria-labelledby="parameters-heading"
-          >
-            <div className="panel-section__heading">
-              <span className="text-indigo-400">
-                <WorkspaceIcon name="params" className="icon-16" />
-              </span>
-              <h2
-                id="parameters-heading"
-                className="panel-section__title"
-              >
-                Parâmetros do algoritmo
-              </h2>
-            </div>
-            <fieldset className="m-0 flex w-full flex-col items-start gap-3.5 border-0 p-0">
-              <legend className="sr-only">Configuração de cabos e vão máximo</legend>
-              <label htmlFor="cable-type" className="field">
-                <span className="field__label">
-                  <span>Tipo de cabo</span>
-                  <span
-                    className={cx("cable-swatch", cableSwatchClass)}
-                    title={`Cor do enlace no mapa para ${cableType}`}
-                  />
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activePanelTab === "params"}
+              onClick={() => setActivePanelTab("params")}
+              className={cx(
+                "cursor-pointer rounded-lg py-1.5 text-[11px] font-semibold transition",
+                activePanelTab === "params"
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-200",
+              )}
+            >
+              Parâmetros
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activePanelTab === "layers"}
+              onClick={() => setActivePanelTab("layers")}
+              className={cx(
+                "cursor-pointer rounded-lg py-1.5 text-[11px] font-semibold transition",
+                activePanelTab === "layers"
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-200",
+              )}
+            >
+              Camadas
+            </button>
+          </div>
+
+          {activePanelTab === "layers" ? (
+            <section
+              className="panel-section"
+              aria-labelledby="layers-heading"
+            >
+              <div className="panel-section__heading">
+                <span className="text-indigo-400">
+                  <WorkspaceIcon name="layers" className="icon-16" />
                 </span>
-                <span className="field__wrap">
-                  <select
-                    id="cable-type"
-                    name="cableType"
-                    value={cableType}
-                    onChange={(event) => onCableTypeChange(event.target.value)}
-                    className="field__control"
-                  >
-                    <option value="AS-80 12 FO">AS-80 12 FO (Azul · R$ 4,50/m)</option>
-                    <option value="AS-120 24 FO">AS-120 24 FO (Roxo · R$ 6,80/m)</option>
-                    <option value="AS-200 48 FO">AS-200 48 FO (Âmbar · R$ 9,50/m)</option>
-                  </select>
-                  <span className="field__chevron">
-                    <WorkspaceIcon name="chevron-down" className="h-3.5 w-3.5" />
-                  </span>
-                </span>
-              </label>
-              <div className="field-row">
-                <label htmlFor="cable-price" className="field field--grow">
-                  <span className="field__label">
-                    Cabo/m
-                  </span>
-                  <span className="field__wrap">
-                    <input
-                      id="cable-price"
-                      name="cablePrice"
-                      type="number"
-                      min="0"
-                      step="0.5"
-                      required
-                      value={cablePrice}
-                      onChange={(event) => onCablePriceChange(event.target.value)}
-                      className="field__control field__control--unit-sm"
-                      aria-label="Preço do cabo por metro"
-                    />
-                    <span className="field__unit">
-                      R$
-                    </span>
-                  </span>
-                </label>
-                <label htmlFor="max-span" className="field field--grow">
-                  <span className="field__label">
-                    Vão máximo
-                  </span>
-                  <span className="field__wrap">
-                    <input
-                      id="max-span"
-                      name="maxSpan"
-                      type="number"
-                      min="1"
-                      required
-                      value={maxSpan}
-                      onChange={(event) => onMaxSpanChange(event.target.value)}
-                      className="field__control field__control--unit-md"
-                      aria-label="Vão máximo em metros"
-                    />
-                    <span className="field__unit field__unit--muted">
-                      m
-                    </span>
-                  </span>
-                </label>
+                <h2
+                  id="layers-heading"
+                  className="panel-section__title"
+                >
+                  Camadas do Mapa
+                </h2>
               </div>
-              <label htmlFor="root-node" className="field">
-                <span className="field__label">
-                  <span>Nó raiz / OLT inicial (Prim)</span>
+              <ul className="layer-list">
+                {layers.map((layer, index) => (
+                  <LayerSwitch
+                    key={layer.label}
+                    layer={layer}
+                    enabled={layerState[index]}
+                    onToggle={() => updateLayer(index)}
+                  />
+                ))}
+              </ul>
+            </section>
+          ) : (
+            <section
+              className="panel-section panel-section--spaced"
+              aria-labelledby="parameters-heading"
+            >
+              <div className="panel-section__heading">
+                <span className="text-indigo-400">
+                  <WorkspaceIcon name="params" className="icon-16" />
                 </span>
-                <span className="field__wrap">
-                  <select
-                    id="root-node"
-                    name="rootNode"
-                    value={rootNodeId}
-                    onChange={(event) => onRootNodeChange(event.target.value)}
-                    className="field__control"
-                  >
-                    <option value="">Automático (primeiro ativo)</option>
-                    {poles.map((p) => (
-                      <option key={p.id} value={String(p.id)}>
-                        #{p.id} · {p.name}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="field__chevron">
-                    <WorkspaceIcon name="chevron-down" className="h-3.5 w-3.5" />
+                <h2
+                  id="parameters-heading"
+                  className="panel-section__title"
+                >
+                  Parâmetros da Rede
+                </h2>
+              </div>
+              <fieldset className="m-0 flex w-full flex-col items-start gap-3.5 border-0 p-0">
+                <legend className="sr-only">Configuração de cabos e vão máximo</legend>
+                <div className="field">
+                  <span className="field__label">
+                    <span>Cabos permitidos no projeto</span>
+                    <span className="text-[10px] font-medium text-indigo-300">
+                      {enabledCablesCount > 1 ? `Mix (${enabledCablesCount})` : "Único"}
+                    </span>
                   </span>
-                </span>
-              </label>
-            </fieldset>
-          </section>
+                  <ul className="m-0 flex w-full list-none flex-col gap-1.5 p-0" aria-label="Modelos de cabo óptico">
+                    {cableCatalog.map((cable) => {
+                      const isEditing = cable.key === editingCable.key;
+                      const checkboxId = `cable-enable-${cable.id_cabo}`;
+                      return (
+                        <li
+                          key={cable.key}
+                          className={cx(
+                            "flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 transition",
+                            isEditing
+                              ? "border-indigo-500/80 bg-indigo-950/50"
+                              : "border-slate-800 bg-slate-900/70 hover:border-slate-700",
+                          )}
+                        >
+                          <div className="flex min-w-0 items-center gap-2">
+                            <label htmlFor={checkboxId} className="sr-only">
+                              Incluir {cable.key} no cálculo
+                            </label>
+                            <input
+                              id={checkboxId}
+                              type="checkbox"
+                              checked={cable.enabled}
+                              onChange={() => onToggleCableEnabled(cable.key)}
+                              className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-indigo-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => onSelectEditingCable(cable.key)}
+                              className="flex min-w-0 cursor-pointer items-center gap-2 text-left"
+                            >
+                              <span
+                                className={cx("cable-swatch shrink-0", cable.swatchClass)}
+                                aria-hidden="true"
+                              />
+                              <span
+                                className={cx(
+                                  "truncate text-xs font-medium",
+                                  cable.enabled ? "text-slate-100" : "text-slate-500 line-through",
+                                )}
+                              >
+                                {cable.key}
+                              </span>
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => onSelectEditingCable(cable.key)}
+                            className={cx(
+                              "shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[10px] font-semibold transition",
+                              isEditing
+                                ? "bg-indigo-600 text-white"
+                                : "text-slate-400 hover:bg-slate-800 hover:text-slate-200",
+                            )}
+                          >
+                            {isEditing ? "Editando" : "Ajustar"}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <p className="m-0 text-[10px] leading-4 text-slate-400">
+                    {enabledCablesCount > 1
+                      ? "Prim escolhe automaticamente o cabo mais econômico para cada vão."
+                      : "Apenas o cabo marcado será usado no cálculo."}
+                  </p>
+                </div>
+
+                <div className="field-row">
+                  <label htmlFor="cable-price" className="field field--grow">
+                    <span className="field__label">
+                      <span>Cabo/m · {editingCable.key}</span>
+                    </span>
+                    <span className="field__wrap">
+                      <input
+                        id="cable-price"
+                        name="cablePrice"
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        required
+                        value={editingCable.price}
+                        onChange={(event) =>
+                          onUpdateCableField(editingCable.key, "price", event.target.value)
+                        }
+                        className="field__control field__control--unit-sm"
+                        aria-label={`Preço por metro de ${editingCable.key}`}
+                      />
+                      <span className="field__unit">
+                        R$
+                      </span>
+                    </span>
+                  </label>
+                  <label htmlFor="max-span" className="field field--grow">
+                    <span className="field__label">
+                      Vão máximo
+                    </span>
+                    <span className="field__wrap">
+                      <input
+                        id="max-span"
+                        name="maxSpan"
+                        type="number"
+                        min="1"
+                        required
+                        value={editingCable.maxSpan}
+                        onChange={(event) =>
+                          onUpdateCableField(editingCable.key, "maxSpan", event.target.value)
+                        }
+                        className="field__control field__control--unit-md"
+                        aria-label={`Vão máximo em metros de ${editingCable.key}`}
+                      />
+                      <span className="field__unit field__unit--muted">
+                        m
+                      </span>
+                    </span>
+                  </label>
+                </div>
+                <label htmlFor="root-node" className="field">
+                  <span className="field__label">
+                    <span>Nó raiz / OLT inicial (Prim)</span>
+                  </span>
+                  <span className="field__wrap">
+                    <select
+                      id="root-node"
+                      name="rootNode"
+                      value={rootNodeId}
+                      onChange={(event) => onRootNodeChange(event.target.value)}
+                      className="field__control"
+                    >
+                      <option value="">Automático (primeiro ativo)</option>
+                      {poles.map((p) => (
+                        <option key={p.id} value={String(p.id)}>
+                          #{p.id} · {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="field__chevron">
+                      <WorkspaceIcon name="chevron-down" className="h-3.5 w-3.5" />
+                    </span>
+                  </span>
+                </label>
+              </fieldset>
+            </section>
+          )}
+
+          <details className="w-full shrink-0 border-t border-slate-800/70 px-5 py-2.5">
+            <summary className="cursor-pointer list-none text-[11px] font-medium text-slate-400 hover:text-slate-200 marker:hidden">
+              Trocar perfil desta aba ▾
+            </summary>
+            <div className="mt-2">
+              <QuickPersonaSwitcher variant="compact" />
+            </div>
+          </details>
         </div>
         <footer className="sidebar__footer">
           <div className="sidebar__status">
             <span className="sidebar__status-dot" />
             <span className="sidebar__status-text">
               {poleCount === 0
-                ? "Aguardando inserção de elementos"
-                : `${poleCount} ${poleCount === 1 ? "ativo inserido" : "ativos inseridos"} · ${trechoCount} ${trechoCount === 1 ? "trecho" : "trechos"}`}
+                ? "Aguardando elementos no mapa"
+                : `${poleCount} ${poleCount === 1 ? "ativo" : "ativos"} · ${trechoCount} ${trechoCount === 1 ? "trecho" : "trechos"}`}
             </span>
           </div>
           <button
@@ -1570,24 +1888,6 @@ function Sidebar({
           >
             {isCalculating ? "Calculando..." : "Calcular Malha Otimizada ⚡"}
           </button>
-          <div className="grid w-full grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={onOpenGraphModal}
-              disabled={!canCalculate}
-              className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-2 text-[11px] font-medium text-slate-200 transition hover:bg-slate-800 disabled:opacity-40"
-            >
-              Inspecionar Grafo
-            </button>
-            <button
-              type="button"
-              onClick={onOpenReportModal}
-              disabled={!canCalculate}
-              className="rounded-lg border border-indigo-500/40 bg-indigo-950/60 px-2.5 py-2 text-[11px] font-semibold text-indigo-200 transition hover:bg-indigo-900/60 disabled:opacity-40"
-            >
-              Memorial & BOM
-            </button>
-          </div>
         </footer>
       </div>
     </aside>
@@ -1605,6 +1905,66 @@ const STATUS_LABELS = {
   error: "Mapa indisponível · veja a mensagem de erro no mapa",
 };
 
+function findRouteInMst(trechos, startId, endId) {
+  if (!trechos?.length || startId === endId) return null;
+  const adj = new Map();
+  for (const t of trechos) {
+    const u = t.origem_id ?? t.id_ponto_origem;
+    const v = t.destino_id ?? t.id_ponto_destino;
+    if (!adj.has(u)) adj.set(u, []);
+    if (!adj.has(v)) adj.set(v, []);
+    adj.get(u).push({ neighbor: v, trecho: t });
+    adj.get(v).push({ neighbor: u, trecho: t });
+  }
+
+  const visited = new Set([startId]);
+  const parent = new Map();
+  const queue = [startId];
+  let found = false;
+
+  while (queue.length > 0) {
+    const curr = queue.shift();
+    if (curr === endId) {
+      found = true;
+      break;
+    }
+    for (const edge of adj.get(curr) || []) {
+      if (!visited.has(edge.neighbor)) {
+        visited.add(edge.neighbor);
+        parent.set(edge.neighbor, { prevNode: curr, trecho: edge.trecho });
+        queue.push(edge.neighbor);
+      }
+    }
+  }
+
+  if (!found) return null;
+
+  const routeTrechos = [];
+  const nodeIds = [endId];
+  let cursor = endId;
+  while (cursor !== startId) {
+    const step = parent.get(cursor);
+    if (!step) return null;
+    routeTrechos.push(step.trecho);
+    nodeIds.push(step.prevNode);
+    cursor = step.prevNode;
+  }
+  routeTrechos.reverse();
+  nodeIds.reverse();
+
+  const totalMeters = routeTrechos.reduce((acc, t) => acc + Number(t.distancia_metros || 0), 0);
+  const totalCost = routeTrechos.reduce((acc, t) => acc + Number(t.custo_trecho || 0), 0);
+
+  return {
+    originId: startId,
+    destId: endId,
+    trechos: routeTrechos,
+    nodeIds,
+    totalMeters,
+    totalCost,
+  };
+}
+
 function isTypingTarget(target) {
   return (
     target instanceof HTMLElement &&
@@ -1617,6 +1977,7 @@ export const WorkspaceGis = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { showToast } = useToast();
+  const { theme, isDark } = useTheme();
   const session = getSession();
   const projectId = Number(searchParams.get("id_projeto"));
   const savedWorkspaceConfig = getStorageItem(STORAGE_KEYS.WORKSPACE_CONFIG, null);
@@ -1640,23 +2001,22 @@ export const WorkspaceGis = () => {
   const [adjacencyList, setAdjacencyList] = useState({});
   const [selectedIds, setSelectedIds] = useState([]);
   const [selectedTrecho, setSelectedTrecho] = useState(null);
+  const [selectedRoute, setSelectedRoute] = useState(null);
   const [searchResult, setSearchResult] = useState(null);
   const [project, setProject] = useState(null);
   const [companyProjects, setCompanyProjects] = useState([]);
   const [isUpdatingProjectStatus, setIsUpdatingProjectStatus] = useState(false);
+  const [pendingProjectStatus, setPendingProjectStatus] = useState(null);
   const [distanceMeters, setDistanceMeters] = useState(0);
   const [estimatedCost, setEstimatedCost] = useState(0);
   const [custoCabos, setCustoCabos] = useState(0);
   const [custoEquipamentos, setCustoEquipamentos] = useState(0);
   const [savingsPercent, setSavingsPercent] = useState(0);
-  const [cableType, setCableType] = useState(
-    () => savedWorkspaceConfig?.cableType || "AS-80 12 FO",
+  const [cableCatalog, setCableCatalog] = useState(() =>
+    buildInitialCableCatalog(savedWorkspaceConfig),
   );
-  const [cablePrice, setCablePrice] = useState(
-    () => savedWorkspaceConfig?.cablePrice ?? 4.5,
-  );
-  const [maxSpan, setMaxSpan] = useState(
-    () => savedWorkspaceConfig?.maxSpan ?? 2000,
+  const [editingCableKey, setEditingCableKey] = useState(
+    () => savedWorkspaceConfig?.editingCableKey || "AS-80 12 FO",
   );
   const [rootNodeId, setRootNodeId] = useState("");
   const [layerState, setLayerState] = useState(() =>
@@ -1672,6 +2032,9 @@ export const WorkspaceGis = () => {
   const [showQuickGuide, setShowQuickGuide] = useState(false);
   const [showGraphModal, setShowGraphModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth >= 1024 : true,
+  );
 
   const [editDesc, setEditDesc] = useState("");
   const [editEquip, setEditEquip] = useState("0");
@@ -1692,12 +2055,11 @@ export const WorkspaceGis = () => {
   useEffect(() => {
     setStorageItem(STORAGE_KEYS.WORKSPACE_CONFIG, {
       snapEnabled,
-      cableType,
-      cablePrice,
-      maxSpan,
+      cableCatalog,
+      editingCableKey,
       layerState,
     });
-  }, [snapEnabled, cableType, cablePrice, maxSpan, layerState]);
+  }, [snapEnabled, cableCatalog, editingCableKey, layerState]);
 
   const toggleLayer = useCallback((index) => {
     setLayerState((current) =>
@@ -1723,37 +2085,51 @@ export const WorkspaceGis = () => {
     setEditStatusFisico(target.status_fisico || "Projetado");
   }, [selectedIds, poles, removedPoles]);
 
-  const handleCableTypeChange = useCallback((nextType) => {
-    setCableType(nextType);
-    const preset = CABLE_PRESETS[nextType];
-    if (preset) {
-      setCablePrice(preset.price);
-      setMaxSpan(preset.maxSpan);
-    }
+  const handleToggleCableEnabled = useCallback(
+    (key) => {
+      setCableCatalog((current) => {
+        const target = current.find((c) => c.key === key);
+        if (!target) return current;
+        const enabledCount = current.filter((c) => c.enabled).length;
+        if (target.enabled && enabledCount <= 1) {
+          showToast("Mantenha pelo menos um tipo de cabo ativo no cálculo.", {
+            type: "warning",
+          });
+          return current;
+        }
+        return current.map((c) => (c.key === key ? { ...c, enabled: !c.enabled } : c));
+      });
+    },
+    [showToast],
+  );
+
+  const handleUpdateCableField = useCallback((key, field, value) => {
+    setCableCatalog((current) =>
+      current.map((c) => (c.key === key ? { ...c, [field]: value } : c)),
+    );
   }, []);
 
   const buildCatalogoCabosPayload = useCallback(() => {
-    const selectedPreset = CABLE_PRESETS[cableType] || CABLE_PRESETS["AS-80 12 FO"];
-    const parsedPrice = Number(cablePrice);
-    const parsedSpan = Number(maxSpan);
-    const customCable = {
-      id_cabo: selectedPreset.id_cabo,
-      descricao_modelo: selectedPreset.descricao_modelo,
-      custo_por_metro: Number.isFinite(parsedPrice) && parsedPrice >= 0 ? parsedPrice : selectedPreset.price,
-      limite_distancia_metros: Number.isFinite(parsedSpan) && parsedSpan > 0 ? parsedSpan : selectedPreset.maxSpan,
-    };
+    const activeCables = cableCatalog.filter((c) => c.enabled);
+    const list = activeCables.length > 0 ? activeCables : [cableCatalog[0]];
+    return list.map((cable) => {
+      const preset = CABLE_PRESETS[cable.key];
+      const parsedPrice = Number(cable.price);
+      const parsedSpan = Number(cable.maxSpan);
+      return {
+        id_cabo: cable.id_cabo,
+        descricao_modelo: cable.descricao_modelo,
+        custo_por_metro:
+          Number.isFinite(parsedPrice) && parsedPrice >= 0 ? parsedPrice : preset.price,
+        limite_distancia_metros:
+          Number.isFinite(parsedSpan) && parsedSpan > 0 ? parsedSpan : preset.maxSpan,
+      };
+    });
+  }, [cableCatalog]);
 
-    const fallbackCables = Object.values(CABLE_PRESETS)
-      .filter((preset) => preset.id_cabo !== customCable.id_cabo && preset.maxSpan > customCable.limite_distancia_metros)
-      .map((preset) => ({
-        id_cabo: preset.id_cabo,
-        descricao_modelo: preset.descricao_modelo,
-        custo_por_metro: Math.max(preset.price, customCable.custo_por_metro + 0.01),
-        limite_distancia_metros: preset.maxSpan,
-      }));
-
-    return [customCable, ...fallbackCables];
-  }, [cableType, cablePrice, maxSpan]);
+  const maxEnabledSpan = cableCatalog
+    .filter((c) => c.enabled)
+    .reduce((max, c) => Math.max(max, Number(c.maxSpan) || 0), 0);
 
   const mapPointToUi = (point, isRemoved = false) => ({
     id: point.id_ponto,
@@ -1835,7 +2211,7 @@ export const WorkspaceGis = () => {
     };
   }, [projectId, session.id_usuario, session.id_empresa_padrao, session?.nivel_acesso, navigate, showToast]);
 
-  const handleChangeProjectStatus = useCallback(
+  const executeProjectStatusChange = useCallback(
     async (novoStatus) => {
       if (!project || ehPerfilSomenteLeituraProjetos(session?.nivel_acesso) || novoStatus === project.status) return;
       setIsUpdatingProjectStatus(true);
@@ -1859,6 +2235,18 @@ export const WorkspaceGis = () => {
       }
     },
     [project, projectId, session.id_usuario, session?.nivel_acesso, showToast],
+  );
+
+  const handleChangeProjectStatus = useCallback(
+    (novoStatus) => {
+      if (!project || ehPerfilSomenteLeituraProjetos(session?.nivel_acesso) || novoStatus === project.status) return;
+      if (novoStatus === "Cancelado" || novoStatus === "Concluído") {
+        setPendingProjectStatus(novoStatus);
+        return;
+      }
+      executeProjectStatusChange(novoStatus);
+    },
+    [executeProjectStatusChange, project, session?.nivel_acesso],
   );
 
   const fitNetworkBounds = useCallback(
@@ -1917,9 +2305,23 @@ export const WorkspaceGis = () => {
       if (toolId !== "select") {
         setSelectedIds([]);
         setSelectedTrecho(null);
+        setSelectedRoute(null);
       }
     },
     [isReadOnly, showToast],
+  );
+
+  const selectPolesInBounds = useCallback(
+    ({ south, north, west, east }) => {
+      const insideIds = poles
+        .filter((p) => p.lat >= south && p.lat <= north && p.lng >= west && p.lng <= east)
+        .map((p) => p.id);
+      setSelectedIds(insideIds);
+      setSelectedTrecho(null);
+      setLassoStart(null);
+      setTool("select");
+    },
+    [poles],
   );
 
   const addPole = useCallback(async ({ lat, lng }, activeTool = "pole") => {
@@ -1927,17 +2329,12 @@ export const WorkspaceGis = () => {
       if (!lassoStart) {
         setLassoStart({ lat, lng });
       } else {
-        const minLat = Math.min(lassoStart.lat, lat);
-        const maxLat = Math.max(lassoStart.lat, lat);
-        const minLng = Math.min(lassoStart.lng, lng);
-        const maxLng = Math.max(lassoStart.lng, lng);
-        const insideIds = poles
-          .filter((p) => p.lat >= minLat && p.lat <= maxLat && p.lng >= minLng && p.lng <= maxLng)
-          .map((p) => p.id);
-        setSelectedIds(insideIds);
-        setSelectedTrecho(null);
-        setLassoStart(null);
-        setTool("select");
+        selectPolesInBounds({
+          south: Math.min(lassoStart.lat, lat),
+          north: Math.max(lassoStart.lat, lat),
+          west: Math.min(lassoStart.lng, lng),
+          east: Math.max(lassoStart.lng, lng),
+        });
       }
       return;
     }
@@ -1981,7 +2378,7 @@ export const WorkspaceGis = () => {
     } catch (error) {
       showToast(error.message, { type: "error" });
     }
-  }, [poles, project, isReadOnly, projectId, session.id_usuario, lassoStart, trechos.length, rootNodeId, buildCatalogoCabosPayload, showToast]);
+  }, [poles, project, isReadOnly, projectId, session.id_usuario, lassoStart, selectPolesInBounds, trechos.length, rootNodeId, buildCatalogoCabosPayload, showToast]);
 
   const movePole = useCallback(async (id, { lat, lng }) => {
     if (isReadOnly) return;
@@ -2036,15 +2433,25 @@ export const WorkspaceGis = () => {
         setCableOriginId(id);
         setSelectedIds([id]);
         setSelectedTrecho(null);
+        setSelectedRoute(null);
       } else {
-        const matched = trechos.find(
-          (t) =>
-            (t.origem_id === cableOriginId && t.destino_id === id) ||
-            (t.origem_id === id && t.destino_id === cableOriginId),
-        );
-        setSelectedIds([cableOriginId, id]);
-        if (matched) {
-          setSelectedTrecho(matched);
+        const route = findRouteInMst(trechos, cableOriginId, id);
+        if (!route) {
+          setSelectedIds([cableOriginId, id]);
+          setSelectedTrecho(null);
+          setSelectedRoute(null);
+          showToast(
+            "Não há rota óptica conectada entre estes dois ativos (verifique o vão máximo ou calcule a malha).",
+            { type: "warning" },
+          );
+        } else if (route.trechos.length === 1) {
+          setSelectedIds([cableOriginId, id]);
+          setSelectedTrecho(route.trechos[0]);
+          setSelectedRoute(null);
+        } else {
+          setSelectedIds(route.nodeIds);
+          setSelectedTrecho(null);
+          setSelectedRoute(route);
         }
         setCableOriginId(null);
         setTool("select");
@@ -2052,17 +2459,24 @@ export const WorkspaceGis = () => {
       return;
     }
     setSelectedTrecho(null);
+    setSelectedRoute(null);
     setSelectedIds((current) => {
       if (!additive) return [id];
       return current.includes(id)
         ? current.filter((entry) => entry !== id)
         : [...current, id];
     });
-  }, [tool, cableOriginId, trechos]);
+  }, [tool, cableOriginId, trechos, showToast]);
+
+  const handleSelectSingleTrecho = useCallback((trecho) => {
+    setSelectedRoute(null);
+    setSelectedTrecho(trecho);
+  }, []);
 
   const clearSelection = useCallback(() => {
     setSelectedIds([]);
     setSelectedTrecho(null);
+    setSelectedRoute(null);
     setLassoStart(null);
     setCableOriginId(null);
   }, []);
@@ -2345,6 +2759,7 @@ export const WorkspaceGis = () => {
       } else if (key === "escape") {
         setSelectedIds([]);
         setSelectedTrecho(null);
+        setSelectedRoute(null);
         setTool("select");
       } else if ((key === "delete" || key === "backspace") && selectedIds.length) {
         event.preventDefault();
@@ -2366,20 +2781,38 @@ export const WorkspaceGis = () => {
     setStatus(nextStatus);
   }, []);
 
+  useEffect(() => {
+    if (!map) return undefined;
+    const timer = window.setTimeout(() => {
+      if (typeof map.invalidateSize === "function") {
+        map.invalidateSize();
+      } else if (window.google?.maps?.event?.trigger) {
+        window.google.maps.event.trigger(map, "resize");
+      }
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [map, sidebarOpen]);
+
   return (
     <main
-      className="workspace"
-      data-infraroute-02-sem-nticos-mode="modo-escuro"
+      className={cx(
+        "workspace",
+        !sidebarOpen && "workspace--sidebar-collapsed",
+        !isDark && "workspace--light",
+      )}
+      data-infraroute-02-sem-nticos-mode={isDark ? "modo-escuro" : "modo-claro"}
     >
       {mapProvider === "google" ? (
         <MapCanvas
           map={map}
+          theme={theme}
           tool={tool}
           isReadOnly={isReadOnly}
           poles={visiblePoles}
           trechos={visibleTrechos}
           selectedIds={selectedIds}
           selectedTrecho={selectedTrecho}
+          highlightedTrechoIds={(selectedRoute?.trechos || []).map((t) => t.id_trecho)}
           lassoStart={lassoStart}
           searchResult={searchResult}
           onMapReady={setMap}
@@ -2388,19 +2821,22 @@ export const WorkspaceGis = () => {
           onAddPole={addPole}
           onMovePole={movePole}
           onSelectPole={selectPole}
-          onSelectTrecho={setSelectedTrecho}
+          onSelectTrecho={handleSelectSingleTrecho}
+          onSelectLassoBounds={selectPolesInBounds}
           onClearSelection={clearSelection}
         />
       ) : (
         <LeafletMapCanvas
           center={MAP_CENTER}
           defaultZoom={DEFAULT_ZOOM}
+          theme={theme}
           tool={tool}
           isReadOnly={isReadOnly}
           poles={visiblePoles}
           trechos={visibleTrechos}
           selectedIds={selectedIds}
           selectedTrecho={selectedTrecho}
+          highlightedTrechoIds={(selectedRoute?.trechos || []).map((t) => t.id_trecho)}
           lassoStart={lassoStart}
           searchResult={searchResult}
           onMapReady={setMap}
@@ -2409,12 +2845,31 @@ export const WorkspaceGis = () => {
           onAddPole={addPole}
           onMovePole={movePole}
           onSelectPole={selectPole}
-          onSelectTrecho={setSelectedTrecho}
+          onSelectTrecho={handleSelectSingleTrecho}
+          onSelectLassoBounds={selectPolesInBounds}
           onClearSelection={clearSelection}
         />
       )}
       {/* Camada de interface: só os controles capturam o mouse; o resto deixa o clique passar para o mapa. */}
       <div className="workspace__overlay">
+        <WorkspaceTopbar
+          projectName={project?.nome}
+          projectStatus={project?.status}
+          isReadOnly={isReadOnly}
+          canChangeStatus={!ehPerfilSomenteLeituraProjetos(session?.nivel_acesso)}
+          isUpdatingProjectStatus={isUpdatingProjectStatus}
+          companyProjects={companyProjects}
+          currentProjectId={projectId}
+          onSwitchProject={(nextId) => navigate(`/workspace?id_projeto=${nextId}`)}
+          onChangeProjectStatus={handleChangeProjectStatus}
+          canCalculate={Boolean(project)}
+          onOpenGraphModal={() => setShowGraphModal(true)}
+          onOpenReportModal={() => setShowReportModal(true)}
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+          showQuickGuide={showQuickGuide}
+          onToggleQuickGuide={() => setShowQuickGuide((prev) => !prev)}
+        />
         <div className="toolbar-zone">
           <ToolBar
             selectedTool={tool}
@@ -2423,7 +2878,7 @@ export const WorkspaceGis = () => {
             snapEnabled={snapEnabled}
             onToggleSnap={handleToggleSnap}
           />
-          {status === "ready" && (
+          {status === "ready" && (tool !== "select" || isReadOnly || selectedIds.length > 0) && (
             <ToolHint
               tool={tool}
               isReadOnly={isReadOnly}
@@ -2434,19 +2889,11 @@ export const WorkspaceGis = () => {
             />
           )}
         </div>
-        <div className="quick-guide-wrap">
-          <button
-            type="button"
-            onClick={() => setShowQuickGuide((prev) => !prev)}
-            aria-expanded={showQuickGuide}
-            className="quick-guide-btn"
-          >
-            <WorkspaceIcon name="help" className="h-3.5 w-3.5 text-indigo-400" />
-            <span>{showQuickGuide ? "Fechar guia" : "Como usar"}</span>
-          </button>
+
+        <div className="workspace-top-right-dock">
           {showQuickGuide && (
             <aside
-              className="quick-guide-card"
+              className="quick-guide-card pointer-events-auto"
               aria-label="Guia rápido do Workspace GIS"
             >
               <div className="mb-2 flex items-center justify-between border-b border-slate-800 pb-2">
@@ -2456,7 +2903,7 @@ export const WorkspaceGis = () => {
                 <button
                   type="button"
                   onClick={() => setShowQuickGuide(false)}
-                  className="text-slate-400 hover:text-white"
+                  className="cursor-pointer text-slate-400 hover:text-white"
                   aria-label="Fechar guia rápido"
                 >
                   ✕
@@ -2477,23 +2924,13 @@ export const WorkspaceGis = () => {
               </ol>
             </aside>
           )}
-        </div>
-        <LiveAuditDrawer placement="workspace-top-right" />
-        {!isGraphConnected && poles.length >= 2 && (
-          <div
-            role="alert"
-            className="pointer-events-auto absolute top-28 left-88 z-20 max-w-md rounded-xl border border-amber-500/60 bg-amber-950/90 px-4 py-2.5 text-xs text-amber-200 shadow-xl"
-          >
-            <strong>Atenção (Ilhas Topológicas — Seção 2.10):</strong> Nem todos os ativos puderam ser conectados pelo Vão Máximo atual ({maxSpan} m). Aumente o vão máximo na barra lateral e recalcule a malha.
-          </div>
-        )}
-        {selectedIds.length > 0 && !selectedTrecho && (() => {
+        {selectedIds.length > 0 && !selectedTrecho && !selectedRoute && (() => {
           const selectedPolesList = allDisplayablePoles.filter((p) => selectedIds.includes(p.id));
           const firstPole = selectedPolesList[0];
           if (!firstPole) return null;
           return (
             <aside
-              className="pointer-events-auto absolute top-28 right-6 z-20 flex w-80 flex-col gap-2.5 rounded-xl border border-slate-700 bg-slate-900/95 p-4 text-xs text-slate-200 shadow-2xl backdrop-blur-md"
+              className="gis-inspector-card pointer-events-auto flex w-80 max-w-full flex-col gap-2.5 rounded-xl border border-slate-700 bg-slate-900/95 p-4 text-xs text-slate-200 shadow-2xl backdrop-blur-md"
               aria-label="Detalhes do ativo selecionado"
             >
               <div className="flex items-center justify-between">
@@ -2632,9 +3069,88 @@ export const WorkspaceGis = () => {
             </aside>
           );
         })()}
+        {selectedRoute && (() => {
+          const polesById = new Map(poles.map((p) => [p.id, p]));
+          const originPole = polesById.get(selectedRoute.originId);
+          const destPole = polesById.get(selectedRoute.destId);
+          return (
+            <aside
+              className="gis-inspector-card pointer-events-auto flex w-80 max-w-full flex-col gap-2.5 rounded-xl border border-slate-700 bg-slate-900/95 p-4 text-xs text-slate-200 shadow-2xl backdrop-blur-md"
+              aria-label="Detalhes da rota óptica ponta a ponta"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="block font-semibold text-cyan-400">
+                    Rota Óptica ({selectedRoute.trechos.length} saltos)
+                  </span>
+                  <p className="m-0 mt-0.5 truncate text-[11px] text-slate-300">
+                    {originPole?.name || `#${selectedRoute.originId}`} →{" "}
+                    {destPole?.name || `#${selectedRoute.destId}`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={clearSelection}
+                  className="cursor-pointer text-slate-400 hover:text-white"
+                  aria-label="Fechar detalhes da rota"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2.5 tabular-nums">
+                <div>
+                  <span className="block text-[10px] uppercase text-slate-400">Extensão da rota</span>
+                  <strong className="text-sm font-bold text-white">
+                    {selectedRoute.totalMeters >= 1000
+                      ? `${(selectedRoute.totalMeters / 1000).toFixed(2)} km`
+                      : `${selectedRoute.totalMeters.toFixed(1)} m`}
+                  </strong>
+                  <span className="block text-[10px] text-slate-400">
+                    {selectedRoute.totalMeters.toFixed(1)} m ({selectedRoute.nodeIds.length} nós)
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-[10px] uppercase text-slate-400">Custo dos trechos</span>
+                  <strong className="text-sm font-bold text-emerald-400">
+                    {selectedRoute.totalCost.toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
+                    })}
+                  </strong>
+                  <span className="block text-[10px] text-slate-400">Fibra na AGM</span>
+                </div>
+              </div>
+
+              <div className="max-h-44 overflow-y-auto border-t border-slate-800 pt-2">
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  Trechos do percurso
+                </p>
+                <ol className="m-0 list-decimal space-y-1 pl-4 text-[11px] tabular-nums">
+                  {selectedRoute.trechos.map((tr) => (
+                    <li key={tr.id_trecho} className="text-slate-300">
+                      <button
+                        type="button"
+                        onClick={() => handleSelectSingleTrecho(tr)}
+                        className="cursor-pointer text-left hover:text-cyan-300 hover:underline"
+                      >
+                        <span className="font-medium text-slate-100">
+                          {tr.origem_descricao} ↔ {tr.destino_descricao}
+                        </span>{" "}
+                        <span className="text-slate-400">
+                          ({Number(tr.distancia_metros).toFixed(0)} m · {tr.modelo_cabo})
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </aside>
+          );
+        })()}
         {selectedTrecho && (
           <aside
-            className="pointer-events-auto absolute top-28 right-6 z-20 flex w-72 flex-col gap-1.5 rounded-xl border border-slate-700 bg-slate-900/95 p-4 text-xs text-slate-200 shadow-2xl"
+            className="gis-inspector-card pointer-events-auto flex w-72 max-w-full flex-col gap-1.5 rounded-xl border border-slate-700 bg-slate-900/95 p-4 text-xs text-slate-200 shadow-2xl backdrop-blur-md"
             aria-label="Detalhes do trecho óptico"
           >
             <div className="flex items-center justify-between">
@@ -2644,7 +3160,7 @@ export const WorkspaceGis = () => {
               <button
                 type="button"
                 onClick={() => setSelectedTrecho(null)}
-                className="text-slate-400 hover:text-white"
+                className="cursor-pointer text-slate-400 hover:text-white"
                 aria-label="Fechar detalhes do trecho"
               >
                 ✕
@@ -2664,6 +3180,15 @@ export const WorkspaceGis = () => {
             </span>
           </aside>
         )}
+        </div>
+        {!isGraphConnected && poles.length >= 2 && (
+          <div
+            role="alert"
+            className="workspace-alert"
+          >
+            <strong>Atenção (Ilhas Topológicas):</strong> Nem todos os ativos puderam ser conectados pelo Vão Máximo atual ({maxEnabledSpan} m). Aumente o vão máximo na barra lateral e recalcule a malha.
+          </div>
+        )}
         <MapStats
           poles={poles}
           distanceMeters={distanceMeters}
@@ -2678,48 +3203,37 @@ export const WorkspaceGis = () => {
           onZoomOut={() => zoomBy(-1)}
           onFitBounds={() => fitNetworkBounds(poles)}
         />
-        <p className="workspace__status">
-          {mapProvider === "google"
-            ? `Google Maps · ${STATUS_LABELS[status]}`
-            : `OpenStreetMap / Leaflet · ${STATUS_LABELS[status]}`}
-        </p>
+        {(status === "loading" || status === "error") && (
+          <p className="workspace__status">
+            {mapProvider === "google"
+              ? `Google Maps · ${STATUS_LABELS[status]}`
+              : `OpenStreetMap / Leaflet · ${STATUS_LABELS[status]}`}
+          </p>
+        )}
         <ScaleBar zoomLevel={view.zoom} lat={view.lat} />
       </div>
       <Sidebar
         poles={poles}
         poleCount={poles.length}
-        selectedCount={selectedIds.length}
         trechoCount={trechos.length}
         isReadOnly={isReadOnly}
-        canChangeStatus={!ehPerfilSomenteLeituraProjetos(session?.nivel_acesso)}
-        companyProjects={companyProjects}
-        currentProjectId={projectId}
-        onSwitchProject={(nextId) => navigate(`/workspace?id_projeto=${nextId}`)}
-        onChangeProjectStatus={handleChangeProjectStatus}
-        isUpdatingProjectStatus={isUpdatingProjectStatus}
-        projectStatus={project?.status}
         searchEnabled={status === "ready"}
         searchResult={searchResult}
         onInsertAtSearch={handleInsertAtSearch}
         onSearch={searchAddress}
         onClearSearch={clearSearch}
-        projectName={project?.nome}
         canCalculate={Boolean(project)}
         onCalculate={calculateTopology}
         isCalculating={isCalculating}
-        cableType={cableType}
-        onCableTypeChange={handleCableTypeChange}
-        cablePrice={cablePrice}
-        onCablePriceChange={setCablePrice}
-        maxSpan={maxSpan}
-        onMaxSpanChange={setMaxSpan}
+        cableCatalog={cableCatalog}
+        editingCableKey={editingCableKey}
+        onSelectEditingCable={setEditingCableKey}
+        onToggleCableEnabled={handleToggleCableEnabled}
+        onUpdateCableField={handleUpdateCableField}
         rootNodeId={rootNodeId}
         onRootNodeChange={setRootNodeId}
-        snapEnabled={snapEnabled}
         layerState={layerState}
         onToggleLayer={toggleLayer}
-        onOpenGraphModal={() => setShowGraphModal(true)}
-        onOpenReportModal={() => setShowReportModal(true)}
       />
 
       {showGraphModal && (
@@ -2826,6 +3340,72 @@ export const WorkspaceGis = () => {
           </div>
         </div>
       )}
+
+      <Modal
+        open={Boolean(pendingProjectStatus)}
+        title={
+          pendingProjectStatus === "Cancelado"
+            ? "Confirmar Cancelamento no GIS"
+            : "Confirmar Conclusão do Projeto"
+        }
+        subtitle={project ? `IR-${String(project.id_projeto).padStart(4, "0")} · ${project.nome}` : undefined}
+        onClose={() => !isUpdatingProjectStatus && setPendingProjectStatus(null)}
+        closeLabel="Fechar confirmação de status"
+      >
+        {pendingProjectStatus && (
+          <div className="space-y-4">
+            <div
+              className={`rounded-xl border p-3.5 text-xs leading-relaxed ${
+                pendingProjectStatus === "Cancelado"
+                  ? "border-red-200 bg-red-50 text-red-900"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-900"
+              }`}
+            >
+              {pendingProjectStatus === "Cancelado" ? (
+                <p>
+                  Cancelar este projeto irá <strong>bloquear imediatamente o canvas GIS para edição</strong>,
+                  preservar o histórico em trilha de auditoria e <strong>excluir sua metragem e CAPEX dos KPIs ativos</strong>.
+                </p>
+              ) : (
+                <p>
+                  Concluir este projeto irá <strong>congelar a malha óptica, BOM e topologia AGM</strong> em modo
+                  somente leitura para auditoria histórica e memorial técnico.
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={isUpdatingProjectStatus}
+                onClick={() => setPendingProjectStatus(null)}
+                className="h-9 cursor-pointer rounded-lg border border-slate-300 bg-white px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                disabled={isUpdatingProjectStatus}
+                onClick={async () => {
+                  const targetStatus = pendingProjectStatus;
+                  await executeProjectStatusChange(targetStatus);
+                  setPendingProjectStatus(null);
+                }}
+                className={`h-9 cursor-pointer rounded-lg px-4 text-xs font-semibold text-white disabled:opacity-50 ${
+                  pendingProjectStatus === "Cancelado"
+                    ? "bg-red-600 hover:bg-red-700"
+                    : "bg-emerald-600 hover:bg-emerald-700"
+                }`}
+              >
+                {isUpdatingProjectStatus
+                  ? "Aplicando..."
+                  : pendingProjectStatus === "Cancelado"
+                    ? "Confirmar Cancelamento"
+                    : "Confirmar Conclusão"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {showReportModal && project && (
         <ProjectReportModal

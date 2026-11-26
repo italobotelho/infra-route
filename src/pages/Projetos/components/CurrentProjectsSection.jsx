@@ -1,10 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { apiRequest, getSession, saveSession } from "../../../lib/api";
 import { useToast } from "../../../components/ToastProvider";
 import { ProjectReportModal } from "../../../components/ProjectReportModal";
+import { EmptyState } from "../../../components/ui/EmptyState";
+import { Modal } from "../../../components/ui/Modal";
+import { KpiGridSkeleton, TableRowsSkeleton } from "../../../components/ui/Skeleton";
+import { formatarDataBr } from "../../../utils/dateTime";
 import { baixarArquivo } from "../../../utils/projectExport";
 import { ehPerfilSomenteLeituraProjetos } from "../../../utils/sessionVault";
+import { STORAGE_KEYS, getStorageItem, setStorageItem } from "../../../utils/storage";
 import default28 from "../assets/default-28.svg";
 
 const STATUS_BADGE_MAP = {
@@ -32,7 +37,7 @@ function FolderIcon() {
 
 function MoreActionsIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5 text-slate-600" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 text-slate-600" aria-hidden="true">
       <circle cx="12" cy="5" r="1.75" />
       <circle cx="12" cy="12" r="1.75" />
       <circle cx="12" cy="19" r="1.75" />
@@ -42,28 +47,41 @@ function MoreActionsIcon() {
 
 export const CurrentProjectsSection = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { showToast } = useToast();
   const [session, setSessionState] = useState(() => getSession());
   const isViewer = ehPerfilSomenteLeituraProjetos(session?.nivel_acesso);
-  const empresaQuery = session?.nivel_acesso === "SuperAdmin" ? 0 : session.id_empresa_padrao;
+  const isSuperAdmin = session?.nivel_acesso === "SuperAdmin";
+  const empresaQuery = isSuperAdmin ? 0 : session.id_empresa_padrao;
 
   const [otpCode, setOtpCode] = useState("");
   const [otpMessage, setOtpMessage] = useState("");
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
 
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("Todos");
+  const initialStatus = searchParams.get("status");
+  const validInitialStatus = STATUS_FILTER_OPTIONS.includes(initialStatus)
+    ? initialStatus
+    : "Todos";
+
+  const [query, setQuery] = useState(() => searchParams.get("q") || "");
+  const [statusFilter, setStatusFilter] = useState(validInitialStatus);
   const [sortBy, setSortBy] = useState({ field: "nome", asc: true });
   const [selected, setSelected] = useState([]);
   const [page, setPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(5);
+  const [itemsPerPage, setItemsPerPage] = useState(() => {
+    const saved = Number(getStorageItem(STORAGE_KEYS.UI_PROJECTS_PAGE_SIZE, 10));
+    return [5, 10, 20, 50].includes(saved) ? saved : 10;
+  });
 
   const [showColumnsMenu, setShowColumnsMenu] = useState(false);
+  const columnsMenuRef = useRef(null);
   const [visibleCols, setVisibleCols] = useState({
     empresa: true,
     responsavel: true,
-    tipo: true,
+    custoKm: true,
   });
+  const [hideCanceled, setHideCanceled] = useState(false);
+  const [pendingStatusChange, setPendingStatusChange] = useState(null);
 
   const [actionProject, setActionProject] = useState(null);
   const [reportProjectId, setReportProjectId] = useState(null);
@@ -72,6 +90,7 @@ export const CurrentProjectsSection = () => {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   const [projects, setProjects] = useState([]);
+  const [companyMap, setCompanyMap] = useState({});
   const [projectName, setProjectName] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -82,13 +101,64 @@ export const CurrentProjectsSection = () => {
     document.title = "Projetos | InfraRoute — Gestão de Expansão OSP/FTTH";
   }, []);
 
+  useEffect(() => {
+    setStorageItem(STORAGE_KEYS.UI_PROJECTS_PAGE_SIZE, itemsPerPage);
+  }, [itemsPerPage]);
+
+  useEffect(() => {
+    const urlStatus = searchParams.get("status");
+    const nextStatus = STATUS_FILTER_OPTIONS.includes(urlStatus) ? urlStatus : "Todos";
+    const nextQuery = searchParams.get("q") || "";
+    setStatusFilter(nextStatus);
+    setQuery(nextQuery);
+  }, [searchParams]);
+
+  const updateUrlFilters = (nextStatus, nextQuery) => {
+    const params = new URLSearchParams();
+    if (nextStatus && nextStatus !== "Todos") params.set("status", nextStatus);
+    if (nextQuery && nextQuery.trim()) params.set("q", nextQuery);
+    setSearchParams(params, { replace: true });
+  };
+
+  useEffect(() => {
+    if (!showColumnsMenu) return undefined;
+    const handleOutsideClick = (event) => {
+      if (columnsMenuRef.current && !columnsMenuRef.current.contains(event.target)) {
+        setShowColumnsMenu(false);
+      }
+    };
+    const handleEsc = (event) => {
+      if (event.key === "Escape") setShowColumnsMenu(false);
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    window.addEventListener("keydown", handleEsc);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      window.removeEventListener("keydown", handleEsc);
+    };
+  }, [showColumnsMenu]);
+
   const loadProjects = async () => {
+    if (!session?.id_usuario) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
-      const response = await apiRequest(
-        `/projetos?id_empresa=${empresaQuery}&id_usuario_autor=${session.id_usuario}`,
-      );
+      const [response, opcoes] = await Promise.all([
+        apiRequest(`/projetos?id_empresa=${empresaQuery}&id_usuario_autor=${session.id_usuario}`),
+        isSuperAdmin
+          ? apiRequest("/auth/opcoes-filtro-auditoria").catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      if (opcoes?.empresas?.length) {
+        const nextMap = {};
+        opcoes.empresas.forEach((emp) => {
+          nextMap[emp.id_empresa] = emp.razao_social;
+        });
+        setCompanyMap(nextMap);
+      }
       setProjects(
         response.map((project) => ({
           ...project,
@@ -109,28 +179,49 @@ export const CurrentProjectsSection = () => {
 
   const kpis = useMemo(() => {
     const total = projects.length;
+    const cancelados = projects.filter((p) => p.status === "Cancelado").length;
+    const projetosValidos = projects.filter((p) => p.status !== "Cancelado");
     const ativos = projects.filter(
       (p) => p.status === "Em Planejamento" || p.status === "Em Execução",
     ).length;
-    const totalMeters = projects.reduce((acc, p) => acc + Number(p.metragem_total || 0), 0);
-    const totalCapex = projects.reduce((acc, p) => acc + Number(p.custo_estimado || 0), 0);
-    return { total, ativos, totalMeters, totalCapex };
+    const totalMeters = projetosValidos.reduce((acc, p) => acc + Number(p.metragem_total || 0), 0);
+    const totalCapex = projetosValidos.reduce((acc, p) => acc + Number(p.custo_estimado || 0), 0);
+    return {
+      total,
+      validos: projetosValidos.length,
+      cancelados,
+      ativos,
+      totalMeters,
+      totalCapex,
+    };
+  }, [projects]);
+
+  const statusCounts = useMemo(() => {
+    const counts = { Todos: projects.length };
+    STATUS_FILTER_OPTIONS.slice(1).forEach((st) => {
+      counts[st] = projects.filter((p) => p.status === st).length;
+    });
+    return counts;
   }, [projects]);
 
   const filteredProjects = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     const byStatus =
       statusFilter === "Todos"
-        ? projects
+        ? hideCanceled
+          ? projects.filter((project) => project.status !== "Cancelado")
+          : projects
         : projects.filter((project) => project.status === statusFilter);
 
     const base = !normalizedQuery
       ? byStatus
-      : byStatus.filter((project) =>
-          `${project.name} ${project.code} ${project.status} ${project.engenheiro_nome || ""}`
+      : byStatus.filter((project) => {
+          const empresaNome =
+            companyMap[project.id_empresa] || session?.razao_social_empresa || "";
+          return `${project.name} ${project.code} ${project.status} ${project.engenheiro_nome || ""} ${empresaNome}`
             .toLowerCase()
-            .includes(normalizedQuery),
-        );
+            .includes(normalizedQuery);
+        });
 
     return [...base].sort((a, b) => {
       let diff = 0;
@@ -143,7 +234,7 @@ export const CurrentProjectsSection = () => {
       }
       return sortBy.asc ? diff : -diff;
     });
-  }, [projects, query, statusFilter, sortBy]);
+  }, [projects, query, statusFilter, hideCanceled, sortBy, companyMap, session?.razao_social_empresa]);
 
   const totalPages = Math.max(1, Math.ceil(filteredProjects.length / itemsPerPage));
   const safePage = Math.min(page, totalPages);
@@ -153,11 +244,17 @@ export const CurrentProjectsSection = () => {
   }, [filteredProjects, safePage, itemsPerPage]);
 
   const pageTotalCost = useMemo(
-    () => paginatedProjects.reduce((acc, item) => acc + Number(item.custo_estimado || 0), 0),
+    () =>
+      paginatedProjects
+        .filter((item) => item.status !== "Cancelado")
+        .reduce((acc, item) => acc + Number(item.custo_estimado || 0), 0),
     [paginatedProjects],
   );
   const pageTotalMeters = useMemo(
-    () => paginatedProjects.reduce((acc, item) => acc + Number(item.metragem_total || 0), 0),
+    () =>
+      paginatedProjects
+        .filter((item) => item.status !== "Cancelado")
+        .reduce((acc, item) => acc + Number(item.metragem_total || 0), 0),
     [paginatedProjects],
   );
 
@@ -267,11 +364,17 @@ export const CurrentProjectsSection = () => {
     ]);
   };
 
-  const refreshProjects = () => {
+  const clearFilters = () => {
     setQuery("");
     setStatusFilter("Todos");
-    setSelected([]);
+    setHideCanceled(false);
     setPage(1);
+    updateUrlFilters("Todos", "");
+  };
+
+  const refreshProjects = () => {
+    clearFilters();
+    setSelected([]);
     loadProjects();
     showToast("Lista de projetos atualizada.", { type: "info" });
   };
@@ -351,7 +454,9 @@ export const CurrentProjectsSection = () => {
     5 +
     (visibleCols.empresa ? 1 : 0) +
     (visibleCols.responsavel ? 1 : 0) +
-    (visibleCols.tipo ? 1 : 0);
+    (visibleCols.custoKm ? 1 : 0);
+
+  const hasActiveFilter = statusFilter !== "Todos" || Boolean(query.trim()) || hideCanceled;
 
   return (
     <main className="relative flex flex-1 grow flex-col items-start gap-6 self-stretch p-4 sm:p-6 lg:p-8">
@@ -399,14 +504,14 @@ export const CurrentProjectsSection = () => {
             <button
               type="submit"
               disabled={isVerifyingOtp || otpCode.length !== 6}
-              className="h-10 rounded-lg bg-amber-600 px-4 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+              className="h-10 cursor-pointer rounded-lg bg-amber-600 px-4 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
             >
               {isVerifyingOtp ? "Validando..." : "Verificar e-mail"}
             </button>
             <button
               type="button"
               onClick={resendEmailOtp}
-              className="h-10 rounded-lg border border-amber-400 bg-white px-3 text-xs font-medium text-amber-900 hover:bg-amber-100"
+              className="h-10 cursor-pointer rounded-lg border border-amber-400 bg-white px-3 text-xs font-medium text-amber-900 hover:bg-amber-100"
             >
               Reenviar código
             </button>
@@ -417,21 +522,25 @@ export const CurrentProjectsSection = () => {
       <header className="flex w-full flex-col items-start gap-4">
         <div className="flex w-full flex-wrap items-center justify-between gap-2">
           <nav aria-label="Breadcrumb">
-            <ol className="m-0 inline-flex list-none items-center gap-2 p-0 text-[11px] text-slate-600">
-              <li>Workspace</li>
+            <ol className="m-0 inline-flex list-none items-center gap-2 p-0 text-xs text-slate-600">
+              <li>
+                <Link to="/dashboard" className="font-medium text-slate-600 hover:text-blue-700 hover:underline">
+                  Dashboard
+                </Link>
+              </li>
               <li aria-hidden="true">/</li>
               <li aria-current="page" className="font-semibold text-slate-900">
                 Projetos
               </li>
             </ol>
           </nav>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {isViewer && (
               <span className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800">
                 Perfil {session?.nivel_acesso} (Somente Leitura em Projetos)
               </span>
             )}
-            <p className="m-0 text-[11px] text-slate-600">
+            <p className="m-0 text-xs text-slate-600">
               Gestão de expansão <abbr title="Outside Plant (Planta Externa)">OSP</abbr> /{" "}
               <abbr title="Fiber to the Home">FTTH</abbr>
             </p>
@@ -442,10 +551,10 @@ export const CurrentProjectsSection = () => {
           <h1 className="text-[28px] font-bold leading-9 tracking-[-0.26px] text-slate-900 sm:text-[32px]">
             Projetos atuais
           </h1>
-          <div className="relative flex flex-wrap items-center gap-2.5">
+          <div className="relative flex w-full flex-wrap items-center gap-2.5 sm:w-auto">
             <label
               htmlFor="search-projects"
-              className="flex h-11 w-full items-center gap-2.5 rounded-lg border border-solid border-slate-300 bg-white px-3.5 sm:w-[220px]"
+              className="flex h-11 w-full items-center gap-2.5 rounded-lg border border-solid border-slate-300 bg-white px-3.5 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100 sm:w-[240px]"
             >
               <img className="h-[18px] w-[18px]" alt="" src={default28} />
               <span className="sr-only">Buscar projetos</span>
@@ -455,10 +564,12 @@ export const CurrentProjectsSection = () => {
                 type="search"
                 value={query}
                 onChange={(event) => {
-                  setQuery(event.target.value);
+                  const val = event.target.value;
+                  setQuery(val);
                   setPage(1);
+                  updateUrlFilters(statusFilter, val);
                 }}
-                placeholder="Buscar projeto ou responsável..."
+                placeholder="Buscar projeto, código ou eng..."
                 aria-label="Buscar projetos"
                 className="min-w-0 flex-1 bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-500"
               />
@@ -472,7 +583,7 @@ export const CurrentProjectsSection = () => {
               Atualizar ↻
             </button>
 
-            <div className="relative">
+            <div className="relative" ref={columnsMenuRef}>
               <button
                 type="button"
                 aria-expanded={showColumnsMenu}
@@ -485,16 +596,16 @@ export const CurrentProjectsSection = () => {
                 <div
                   role="region"
                   aria-label="Personalizar colunas e paginação"
-                  className="absolute right-0 z-30 mt-2 w-60 rounded-xl border border-slate-200 bg-white p-4 shadow-xl"
+                  className="absolute right-0 z-30 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-4 shadow-xl"
                 >
                   <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                     Colunas Visíveis
                   </p>
-                  <div className="space-y-1.5 text-xs text-slate-700">
+                  <div className="space-y-2 text-xs text-slate-700">
                     {[
                       { key: "empresa", label: "Empresa (Tenant)" },
                       { key: "responsavel", label: "Responsável Técnico (CREA)" },
-                      { key: "tipo", label: "Tipo de Rede" },
+                      { key: "custoKm", label: "Custo / km" },
                     ].map((col) => (
                       <label key={col.key} className="flex cursor-pointer items-center gap-2">
                         <input
@@ -524,6 +635,8 @@ export const CurrentProjectsSection = () => {
                     >
                       <option value={5}>5 projetos por página</option>
                       <option value={10}>10 projetos por página</option>
+                      <option value={20}>20 projetos por página</option>
+                      <option value={50}>50 projetos por página</option>
                     </select>
                   </div>
                 </div>
@@ -535,7 +648,7 @@ export const CurrentProjectsSection = () => {
               disabled={isViewer}
               title={
                 isViewer
-                  ? "Perfil Visualizador não tem permissão para criar projetos (RBAC)."
+                  ? "Perfil sem permissão para criar projetos (RBAC)."
                   : "Criar um novo projeto de expansão óptica"
               }
               onClick={() => setShowCreateForm(true)}
@@ -547,51 +660,67 @@ export const CurrentProjectsSection = () => {
         </div>
       </header>
 
-      <section aria-label="Resumo executivo do portfólio" className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            Projetos na Carteira
-          </span>
-          <p className="mt-1 text-2xl font-bold text-slate-900">{kpis.total}</p>
-          <span className="text-xs text-slate-500">Isolamento multi-tenant ativo</span>
-        </article>
-        <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            Em Planejamento / Execução
-          </span>
-          <p className="mt-1 text-2xl font-bold text-blue-700">{kpis.ativos}</p>
-          <span className="text-xs text-slate-500">Abertos para edição no GIS</span>
-        </article>
-        <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            Malha Óptica Total
-          </span>
-          <p className="mt-1 text-2xl font-bold text-slate-900">
-            {(kpis.totalMeters / 1000).toLocaleString("pt-BR", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}{" "}
-            km
-          </p>
-          <span className="text-xs text-slate-500">
-            {kpis.totalMeters.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} metros otimizados
-          </span>
-        </article>
-        <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            CAPEX Total Estimado
-          </span>
-          <p className="mt-1 text-2xl font-bold text-emerald-700">
-            {kpis.totalCapex.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-          </p>
-          <span className="text-xs text-slate-500">Cabos AGM + equipamentos</span>
-        </article>
-      </section>
+      {loading && projects.length === 0 ? (
+        <KpiGridSkeleton count={4} />
+      ) : (
+        <section aria-label="Resumo executivo do portfólio" className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              Projetos na Carteira
+            </span>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{kpis.total}</p>
+            <span className="text-xs text-slate-500">
+              {kpis.cancelados > 0
+                ? `${kpis.validos} válidos · ${kpis.cancelados} cancelado(s)`
+                : isSuperAdmin
+                  ? "Visão global multi-empresa"
+                  : "Isolamento multi-tenant ativo"}
+            </span>
+          </article>
+          <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              Em Planejamento / Execução
+            </span>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-blue-700">{kpis.ativos}</p>
+            <span className="text-xs text-slate-500">Abertos para edição no GIS</span>
+          </article>
+          <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              Malha Óptica Válida
+            </span>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+              {(kpis.totalMeters / 1000).toLocaleString("pt-BR", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}{" "}
+              km
+            </p>
+            <span className="text-xs tabular-nums text-slate-500">
+              {kpis.totalMeters.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} m
+              {kpis.cancelados > 0 ? " (cancelados excluídos)" : " otimizados"}
+            </span>
+          </article>
+          <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              CAPEX Válido Estimado
+            </span>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-700">
+              {kpis.totalCapex.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+            </p>
+            <span className="text-xs text-slate-500">
+              {kpis.cancelados > 0
+                ? `${kpis.cancelados} cancelado(s) excluído(s)`
+                : "Cabos AGM + equipamentos"}
+            </span>
+          </article>
+        </section>
+      )}
 
       <div className="flex w-full flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filtrar por status">
           {STATUS_FILTER_OPTIONS.map((statusOpt) => {
             const active = statusFilter === statusOpt;
+            const count = statusCounts[statusOpt] ?? 0;
             return (
               <button
                 key={statusOpt}
@@ -600,17 +729,42 @@ export const CurrentProjectsSection = () => {
                 onClick={() => {
                   setStatusFilter(statusOpt);
                   setPage(1);
+                  updateUrlFilters(statusOpt, query);
                 }}
-                className={`cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition ${
+                className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                   active
-                    ? "border-blue-600 bg-blue-600 text-white"
+                    ? "border-blue-600 bg-blue-600 text-white shadow-sm"
                     : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
                 }`}
               >
-                {statusOpt}
+                <span>{statusOpt}</span>
+                <span
+                  className={`rounded-full px-1.5 py-0.2 text-[10px] font-semibold tabular-nums ${
+                    active ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {count}
+                </span>
               </button>
             );
           })}
+          {statusFilter === "Todos" && kpis.cancelados > 0 && (
+            <button
+              type="button"
+              aria-pressed={hideCanceled}
+              onClick={() => {
+                setHideCanceled((prev) => !prev);
+                setPage(1);
+              }}
+              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                hideCanceled
+                  ? "border-red-300 bg-red-50 text-red-700"
+                  : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              <span>{hideCanceled ? "Mostrando sem cancelados" : "Ocultar cancelados"}</span>
+            </button>
+          )}
         </div>
 
         {selected.length > 0 && (
@@ -623,14 +777,14 @@ export const CurrentProjectsSection = () => {
             <button
               type="button"
               onClick={exportSelectedBatch}
-              className="rounded bg-blue-600 px-2.5 py-1 font-semibold text-white hover:bg-blue-700"
+              className="cursor-pointer rounded bg-blue-600 px-2.5 py-1 font-semibold text-white hover:bg-blue-700"
             >
               Exportar Lote (JSON)
             </button>
             <button
               type="button"
               onClick={() => setSelected([])}
-              className="rounded border border-blue-300 bg-white px-2.5 py-1 font-medium text-blue-800 hover:bg-blue-100"
+              className="cursor-pointer rounded border border-blue-300 bg-white px-2.5 py-1 font-medium text-blue-800 hover:bg-blue-100"
             >
               Limpar
             </button>
@@ -660,10 +814,10 @@ export const CurrentProjectsSection = () => {
                     checked={allSelected}
                     onChange={toggleAll}
                     aria-label="Selecionar todos os projetos"
-                    className="h-4 w-4 rounded border-slate-300 accent-blue-600"
+                    className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-blue-600"
                   />
                 </th>
-                <th scope="col" className="min-w-[180px] px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                <th scope="col" className="min-w-[200px] px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
                   <button
                     type="button"
                     onClick={() => toggleSort("nome")}
@@ -686,13 +840,13 @@ export const CurrentProjectsSection = () => {
                     Responsável (CREA)
                   </th>
                 )}
-                {visibleCols.tipo && (
-                  <th scope="col" className="min-w-[120px] px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-                    Tipo de Rede
+                {visibleCols.custoKm && (
+                  <th scope="col" className="min-w-[115px] px-4 py-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                    Custo / km
                   </th>
                 )}
-                <th scope="col" className="min-w-[170px] px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-                  <div className="flex items-center gap-2">
+                <th scope="col" className="min-w-[170px] px-4 py-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                  <div className="inline-flex items-center justify-end gap-2">
                     <button
                       type="button"
                       onClick={() => toggleSort("custo")}
@@ -712,18 +866,14 @@ export const CurrentProjectsSection = () => {
                     </button>
                   </div>
                 </th>
-                <th scope="col" className="w-16 px-4 py-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                <th scope="col" className="min-w-[180px] px-4 py-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-600">
                   Ações
                 </th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr>
-                  <td colSpan={visibleColCount} className="p-6 text-sm text-slate-600">
-                    Carregando projetos...
-                  </td>
-                </tr>
+                <TableRowsSkeleton columns={visibleColCount} rows={4} />
               ) : error && projects.length === 0 ? (
                 <tr>
                   <td colSpan={visibleColCount} className="p-6 text-sm text-red-600" role="alert">
@@ -732,21 +882,59 @@ export const CurrentProjectsSection = () => {
                 </tr>
               ) : filteredProjects.length === 0 ? (
                 <tr>
-                  <td colSpan={visibleColCount} className="p-6 text-sm text-slate-600">
-                    Nenhum projeto encontrado para o filtro aplicado.
+                  <td colSpan={visibleColCount}>
+                    <EmptyState
+                      title={
+                        hasActiveFilter
+                          ? "Nenhum projeto encontrado para este filtro"
+                          : "Nenhum projeto cadastrado nesta empresa"
+                      }
+                      description={
+                        hasActiveFilter
+                          ? "Tente limpar a busca ou escolher outro status no filtro acima."
+                          : "Crie o primeiro projeto para posicionar postes, CTOs e calcular a topologia AGM no mapa GIS."
+                      }
+                      actionLabel={
+                        hasActiveFilter
+                          ? "Limpar filtros"
+                          : !isViewer
+                            ? "Criar primeiro projeto"
+                            : undefined
+                      }
+                      onAction={
+                        hasActiveFilter
+                          ? clearFilters
+                          : !isViewer
+                            ? () => setShowCreateForm(true)
+                            : undefined
+                      }
+                    />
                   </td>
                 </tr>
               ) : (
                 paginatedProjects.map((project) => {
                   const checkboxId = `select-project-${project.id_projeto}`;
-                  const isFrozen = project.status === "Concluído" || project.status === "Cancelado";
+                  const isCanceled = project.status === "Cancelado";
+                  const isFrozen = project.status === "Concluído" || isCanceled;
                   const badgeClass =
                     STATUS_BADGE_MAP[project.status] || "border-slate-200 bg-slate-50 text-slate-700";
+                  const empresaLabel =
+                    companyMap[project.id_empresa] ||
+                    (project.id_empresa === session?.id_empresa_padrao
+                      ? session?.razao_social_empresa
+                      : `Empresa #${project.id_empresa}`);
+                  const meters = Number(project.metragem_total || 0);
+                  const cost = Number(project.custo_estimado || 0);
+                  const costPerKm = meters > 0 ? cost / (meters / 1000) : 0;
 
                   return (
                     <tr
                       key={project.id_projeto}
-                      className="h-14 border-b border-solid border-slate-200 bg-white transition hover:bg-slate-50/80"
+                      className={`h-14 border-b border-solid border-slate-200 transition ${
+                        isCanceled
+                          ? "bg-slate-50/70 opacity-75 hover:bg-slate-100/70"
+                          : "bg-white hover:bg-slate-50/80"
+                      }`}
                     >
                       <td className="px-4 py-2">
                         <label htmlFor={checkboxId} className="sr-only">
@@ -759,7 +947,7 @@ export const CurrentProjectsSection = () => {
                           checked={selected.includes(project.code)}
                           onChange={() => toggleProject(project.code)}
                           aria-label={`Selecionar ${project.name}`}
-                          className="h-4 w-4 rounded border-slate-300 accent-blue-600"
+                          className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-blue-600"
                         />
                       </td>
                       <th scope="row" className="px-4 py-2 font-normal">
@@ -768,13 +956,23 @@ export const CurrentProjectsSection = () => {
                           <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
                             <button
                               type="button"
-                              className="max-w-full cursor-pointer truncate text-left text-xs font-semibold text-slate-900 hover:text-blue-700 hover:underline"
+                              className={`max-w-full cursor-pointer truncate text-left text-xs font-semibold hover:text-blue-700 hover:underline ${
+                                isCanceled ? "text-slate-500 line-through" : "text-slate-900"
+                              }`}
                               onClick={() => navigate(`/workspace?id_projeto=${project.id_projeto}`)}
                             >
                               {project.name}
                             </button>
-                            <span className="max-w-full truncate text-[10px] text-slate-500">
-                              {project.code} · Abrir no mapa GIS
+                            <span className="max-w-full truncate font-mono text-[10px] text-slate-500">
+                              {project.code}
+                              {project.data_criacao && (
+                                <>
+                                  {" · "}
+                                  <time dateTime={project.data_criacao}>
+                                    {formatarDataBr(project.data_criacao)}
+                                  </time>
+                                </>
+                              )}
                             </span>
                           </div>
                         </div>
@@ -783,13 +981,13 @@ export const CurrentProjectsSection = () => {
                         <span
                           className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${badgeClass}`}
                         >
-                          {isFrozen && <span aria-hidden="true">🔒</span>}
+                          {isFrozen && <span aria-hidden="true">{isCanceled ? "⛔" : "🔒"}</span>}
                           <span>{project.status}</span>
                         </span>
                       </td>
                       {visibleCols.empresa && (
                         <td className="max-w-[180px] truncate px-4 py-2 text-xs text-slate-700">
-                          {session?.razao_social_empresa}
+                          {empresaLabel}
                         </td>
                       )}
                       {visibleCols.responsavel && (
@@ -804,21 +1002,36 @@ export const CurrentProjectsSection = () => {
                           </div>
                         </td>
                       )}
-                      {visibleCols.tipo && (
-                        <td className="px-4 py-2 text-xs text-slate-700">
-                          Expansão <abbr title="Outside Plant (Planta Externa)">OSP</abbr>
+                      {visibleCols.custoKm && (
+                        <td className="px-4 py-2 text-right text-xs tabular-nums text-slate-700">
+                          {meters > 0 ? (
+                            <span className={isCanceled ? "text-slate-400" : "font-medium text-slate-800"}>
+                              {costPerKm.toLocaleString("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
+                                maximumFractionDigits: 0,
+                              })}
+                              /km
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
                         </td>
                       )}
-                      <td className="px-4 py-2">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="whitespace-nowrap text-xs font-semibold text-slate-900">
-                            {Number(project.custo_estimado || 0).toLocaleString("pt-BR", {
+                      <td className="px-4 py-2 text-right tabular-nums">
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span
+                            className={`whitespace-nowrap text-xs font-semibold ${
+                              isCanceled ? "text-slate-400 line-through" : "text-slate-900"
+                            }`}
+                          >
+                            {cost.toLocaleString("pt-BR", {
                               style: "currency",
                               currency: "BRL",
                             })}
                           </span>
                           <span className="whitespace-nowrap text-[11px] text-slate-600">
-                            {Number(project.metragem_total || 0).toLocaleString("pt-BR", {
+                            {meters.toLocaleString("pt-BR", {
                               maximumFractionDigits: 1,
                             })}{" "}
                             m
@@ -826,17 +1039,48 @@ export const CurrentProjectsSection = () => {
                         </div>
                       </td>
                       <td className="px-4 py-2 text-right">
-                        <button
-                          type="button"
-                          aria-label={`Ações de ${project.name}`}
-                          onClick={() => {
-                            setActionProject(project);
-                            setEditProjectName(project.name);
-                          }}
-                          className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-transparent hover:border-slate-200 hover:bg-slate-100"
-                        >
-                          <MoreActionsIcon />
-                        </button>
+                        <div className="inline-flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/workspace?id_projeto=${project.id_projeto}`)}
+                            title={
+                              isFrozen
+                                ? `Consultar ${project.name} no mapa GIS (somente leitura)`
+                                : `Abrir ${project.name} no mapa GIS`
+                            }
+                            className={`inline-flex h-8 cursor-pointer items-center rounded-lg border px-2.5 text-[11px] font-semibold transition ${
+                              isCanceled
+                                ? "border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                : "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                            }`}
+                          >
+                            {isFrozen ? "Consultar GIS" : "Mapa GIS"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setReportProjectId(project.id_projeto)}
+                            aria-label={`Memorial e orçamento de ${project.name}`}
+                            title="Memorial Descritivo & BOM"
+                            className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" className="h-4 w-4" aria-hidden="true">
+                              <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+                              <path d="M14 3v5h5M9 13h6M9 17h4" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Gerenciar ${project.name}`}
+                            title="Renomear ou alterar status"
+                            onClick={() => {
+                              setActionProject(project);
+                              setEditProjectName(project.name);
+                            }}
+                            className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-transparent hover:border-slate-200 hover:bg-slate-100"
+                          >
+                            <MoreActionsIcon />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -850,9 +1094,9 @@ export const CurrentProjectsSection = () => {
                   colSpan={visibleColCount - 2}
                   className="px-4 py-2 text-xs font-semibold text-slate-700"
                 >
-                  Total acumulado (página atual)
+                  Total válido (página atual · cancelados excluídos)
                 </th>
-                <td className="px-4 py-2 text-xs font-semibold text-slate-900">
+                <td className="px-4 py-2 text-right text-xs font-semibold tabular-nums text-slate-900">
                   {pageTotalCost.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} ·{" "}
                   {pageTotalMeters.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} m
                 </td>
@@ -873,7 +1117,7 @@ export const CurrentProjectsSection = () => {
                   type="button"
                   disabled={safePage <= 1}
                   onClick={() => setPage((current) => Math.max(1, current - 1))}
-                  className="inline-flex h-8 items-center justify-center rounded-md border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                  className="inline-flex h-8 cursor-pointer items-center justify-center rounded-md border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Anterior
                 </button>
@@ -884,7 +1128,7 @@ export const CurrentProjectsSection = () => {
                     type="button"
                     onClick={() => setPage(item)}
                     aria-current={safePage === item ? "page" : undefined}
-                    className={`inline-flex h-8 min-w-8 items-center justify-center rounded-md px-2.5 text-[11px] font-semibold ${
+                    className={`inline-flex h-8 min-w-8 cursor-pointer items-center justify-center rounded-md px-2.5 text-[11px] font-semibold ${
                       safePage === item
                         ? "bg-blue-600 text-white"
                         : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -899,7 +1143,7 @@ export const CurrentProjectsSection = () => {
                   type="button"
                   disabled={safePage >= totalPages}
                   onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                  className="inline-flex h-8 items-center justify-center rounded-md border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                  className="inline-flex h-8 cursor-pointer items-center justify-center rounded-md border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Próximo
                 </button>
@@ -927,79 +1171,71 @@ export const CurrentProjectsSection = () => {
         </p>
       )}
 
-      {showCreateForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <form
-            className="w-full max-w-md space-y-4 rounded-xl bg-white p-6 shadow-xl"
-            onSubmit={createProject}
-          >
-            <h2 className="text-xl font-semibold text-slate-900">Criar novo projeto</h2>
-            <fieldset className="m-0 space-y-2 border-0 p-0">
-              <legend className="sr-only">Identificação do novo projeto</legend>
-              <label htmlFor="new-project-name" className="block text-sm font-medium text-slate-700">
-                Nome do projeto
-              </label>
-              <input
-                id="new-project-name"
-                name="projectName"
-                type="text"
-                autoFocus
-                required
-                minLength={1}
-                maxLength={100}
-                placeholder="Ex.: Expansão FTTH Setor Norte"
-                value={projectName}
-                onChange={(event) => setProjectName(event.target.value)}
-                className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm"
-              />
-            </fieldset>
-            {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
-            <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                className="rounded-lg border border-slate-300 px-4 py-2 text-sm"
-                onClick={() => setShowCreateForm(false)}
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={isCreating}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-              >
-                {isCreating ? "Criando projeto..." : "Criar Projeto"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+      <Modal
+        open={showCreateForm}
+        title="Criar novo projeto"
+        subtitle="Defina um nome identificador para iniciar o planejamento no Workspace GIS."
+        onClose={() => setShowCreateForm(false)}
+        closeLabel="Fechar criação de projeto"
+      >
+        <form className="space-y-4" onSubmit={createProject}>
+          <fieldset className="m-0 space-y-2 border-0 p-0">
+            <legend className="sr-only">Identificação do novo projeto</legend>
+            <label htmlFor="new-project-name" className="block text-sm font-medium text-slate-700">
+              Nome do projeto
+            </label>
+            <input
+              id="new-project-name"
+              name="projectName"
+              type="text"
+              autoFocus
+              required
+              minLength={1}
+              maxLength={100}
+              placeholder="Ex.: Expansão FTTH Setor Norte"
+              value={projectName}
+              onChange={(event) => setProjectName(event.target.value)}
+              className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
+            />
+          </fieldset>
+          {error && (
+            <p className="text-sm text-red-600" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              className="cursor-pointer rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              onClick={() => setShowCreateForm(false)}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={isCreating}
+              className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+            >
+              {isCreating ? "Criando projeto..." : "Criar Projeto"}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
-      {actionProject && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={`Gerenciar ${actionProject.name}`}
-            className="w-full max-w-md space-y-4 rounded-xl bg-white p-6 shadow-xl"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">{actionProject.name}</h2>
-                <p className="text-xs text-slate-500">
-                  {actionProject.code} · Status atual: <strong>{actionProject.status}</strong>
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActionProject(null)}
-                className="rounded px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                aria-label="Fechar ações do projeto"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={renameProject} className="space-y-2 border-t border-slate-100 pt-3">
+      <Modal
+        open={Boolean(actionProject)}
+        title={actionProject?.name || ""}
+        subtitle={
+          actionProject
+            ? `${actionProject.code} · Status atual: ${actionProject.status}`
+            : undefined
+        }
+        onClose={() => setActionProject(null)}
+        closeLabel="Fechar ações do projeto"
+      >
+        {actionProject && (
+          <div className="space-y-4">
+            <form onSubmit={renameProject} className="space-y-2">
               <label
                 htmlFor="edit-project-name"
                 className="block text-xs font-semibold uppercase tracking-wider text-slate-500"
@@ -1034,14 +1270,14 @@ export const CurrentProjectsSection = () => {
                     actionProject.status === "Concluído" ||
                     actionProject.status === "Cancelado"
                   }
-                  className="h-9 rounded-lg bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="h-9 cursor-pointer rounded-lg bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isRenamingProject ? "Salvando..." : "Salvar Nome"}
                 </button>
               </div>
               {(actionProject.status === "Concluído" || actionProject.status === "Cancelado") && (
                 <p className="text-[11px] text-amber-700">
-                  Projeto congelado para auditoria histórica (Seção 3.3).
+                  Projeto congelado para auditoria histórica (imutabilidade ativa).
                 </p>
               )}
             </form>
@@ -1056,11 +1292,19 @@ export const CurrentProjectsSection = () => {
                     key={st}
                     type="button"
                     disabled={isViewer || isUpdatingStatus || actionProject.status === st}
-                    onClick={() => updateProjectStatus(actionProject.id_projeto, st)}
-                    className={`rounded-lg border px-3 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                    onClick={() => {
+                      if (st === "Cancelado" || st === "Concluído") {
+                        setPendingStatusChange({ project: actionProject, novoStatus: st });
+                        return;
+                      }
+                      updateProjectStatus(actionProject.id_projeto, st);
+                    }}
+                    className={`cursor-pointer rounded-lg border px-3 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
                       actionProject.status === st
                         ? "border-blue-600 bg-blue-50 text-blue-700"
-                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        : st === "Cancelado"
+                          ? "border-red-200 bg-white text-red-700 hover:bg-red-50"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                     }`}
                   >
                     {st}
@@ -1073,7 +1317,7 @@ export const CurrentProjectsSection = () => {
               <button
                 type="button"
                 onClick={() => navigate(`/workspace?id_projeto=${actionProject.id_projeto}`)}
-                className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-blue-700"
+                className="w-full cursor-pointer rounded-lg bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-blue-700"
               >
                 Abrir no Mapa GIS →
               </button>
@@ -1084,14 +1328,87 @@ export const CurrentProjectsSection = () => {
                   setActionProject(null);
                   setReportProjectId(targetId);
                 }}
-                className="w-full rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-semibold text-blue-800 hover:bg-blue-100"
+                className="w-full cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-semibold text-blue-800 hover:bg-blue-100"
               >
                 Memorial & Orçamento (BOM / GeoJSON / PDF)
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(pendingStatusChange)}
+        title={
+          pendingStatusChange?.novoStatus === "Cancelado"
+            ? "Confirmar Cancelamento de Projeto"
+            : "Confirmar Conclusão de Projeto"
+        }
+        subtitle={
+          pendingStatusChange
+            ? `${pendingStatusChange.project.code} · ${pendingStatusChange.project.name}`
+            : undefined
+        }
+        onClose={() => !isUpdatingStatus && setPendingStatusChange(null)}
+        closeLabel="Fechar confirmação de status"
+      >
+        {pendingStatusChange && (
+          <div className="space-y-4">
+            <div
+              className={`rounded-xl border p-3.5 text-xs leading-relaxed ${
+                pendingStatusChange.novoStatus === "Cancelado"
+                  ? "border-red-200 bg-red-50 text-red-900"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-900"
+              }`}
+            >
+              {pendingStatusChange.novoStatus === "Cancelado" ? (
+                <p>
+                  Ao alterar o status para <strong>Cancelado</strong>, o projeto será{" "}
+                  <strong>congelado para edição e recálculo no GIS</strong> e será automaticamente{" "}
+                  <strong>excluído dos KPIs de extensão óptica e CAPEX consolidado</strong> da empresa.
+                  O registro permanece preservado para auditoria técnica (soft-archive).
+                </p>
+              ) : (
+                <p>
+                  Ao marcar o projeto como <strong>Concluído</strong>, sua topologia AGM, lista de
+                  materiais (BOM) e parâmetros de cálculo serão <strong>congelados para auditoria histórica</strong>{" "}
+                  e o projeto passará para modo somente leitura no mapa GIS.
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={isUpdatingStatus}
+                onClick={() => setPendingStatusChange(null)}
+                className="h-9 cursor-pointer rounded-lg border border-slate-300 bg-white px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                disabled={isUpdatingStatus}
+                onClick={async () => {
+                  const { project, novoStatus } = pendingStatusChange;
+                  await updateProjectStatus(project.id_projeto, novoStatus);
+                  setPendingStatusChange(null);
+                }}
+                className={`h-9 cursor-pointer rounded-lg px-4 text-xs font-semibold text-white disabled:opacity-50 ${
+                  pendingStatusChange.novoStatus === "Cancelado"
+                    ? "bg-red-600 hover:bg-red-700"
+                    : "bg-emerald-600 hover:bg-emerald-700"
+                }`}
+              >
+                {isUpdatingStatus
+                  ? "Aplicando..."
+                  : pendingStatusChange.novoStatus === "Cancelado"
+                    ? "Confirmar Cancelamento"
+                    : "Confirmar Conclusão"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {reportProjectId && (
         <ProjectReportModal
