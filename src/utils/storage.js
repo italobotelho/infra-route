@@ -16,6 +16,9 @@ export const STORAGE_KEYS = {
   LEGACY_AUTH_SESSION: "infraroute-session",
   CADASTRO_DRAFT: "infraroute:form:cadastro",
   WORKSPACE_CONFIG: "infraroute:config:workspace",
+  UI_SIDEBAR_COLLAPSED: "infraroute:ui:sidebar-collapsed",
+  UI_PROJECTS_PAGE_SIZE: "infraroute:ui:projects-page-size",
+  UI_THEME: "infraroute:ui:theme",
 };
 
 const CAMPOS_SENSIVEIS_PROIBIDOS = ["senha", "senha_hash", "password", "cpf"];

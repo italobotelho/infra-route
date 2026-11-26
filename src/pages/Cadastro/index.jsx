@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { BrandLogo } from "../../components/BrandLogo";
 import CampoErro from "../../components/CampoErro";
+import { TermsOfUseModal } from "../../components/TermsOfUseModal";
+import { ThemeToggle } from "../../components/ThemeProvider";
 import { useToast } from "../../components/ToastProvider";
 import { apiRequest, saveSession } from "../../lib/api";
 import {
@@ -41,6 +44,7 @@ export default function Cadastro() {
     };
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
   const [enviado, setEnviado] = useState(false);
   const [sucesso, setSucesso] = useState(false);
   const [tocados, setTocados] = useState({});
@@ -107,7 +111,7 @@ export default function Cadastro() {
 
   function classeCampo(campo) {
     if (!tocados[campo] && !enviado) return "border-slate-300";
-    return erros[campo] ? "border-red-500" : "border-green-600";
+    return erros[campo] ? "border-red-500 bg-red-50/30" : "border-emerald-600";
   }
 
   async function enviarFormulario(evento) {
@@ -150,13 +154,16 @@ export default function Cadastro() {
   return (
     <main className="relative flex min-h-screen flex-col overflow-y-auto bg-slate-50 lg:flex-row">
       <section
-        className="relative flex flex-1 flex-col items-start justify-center gap-10 bg-slate-900 p-8 sm:p-12 lg:min-h-screen lg:p-16"
+        className="relative flex flex-1 flex-col items-start justify-center gap-10 bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-8 sm:p-12 lg:min-h-screen lg:p-16"
         aria-labelledby="brand-heading"
       >
         <div className="flex w-full flex-col items-start gap-4">
-          <p className="text-xs font-medium leading-5 text-slate-300">
-            INFRAROUTE&nbsp;&nbsp;/&nbsp;&nbsp;ENGENHARIA DE REDES
-          </p>
+          <div className="inline-flex items-center gap-3">
+            <BrandLogo size="md" decorative />
+            <p className="text-xs font-semibold tracking-wider text-blue-400">
+              INFRAROUTE&nbsp;&nbsp;/&nbsp;&nbsp;ENGENHARIA DE REDES
+            </p>
+          </div>
           <h1
             id="brand-heading"
             className="text-3xl font-bold leading-tight text-slate-50 sm:text-[40px] sm:leading-[56px]"
@@ -180,9 +187,13 @@ export default function Cadastro() {
       </section>
 
       <section
-        className="relative flex flex-1 flex-col items-center justify-center bg-slate-50 px-5 py-10 sm:px-8 lg:min-h-screen lg:p-12"
+        className="relative flex flex-1 flex-col items-center justify-center bg-slate-50 px-5 py-10 transition-colors sm:px-8 lg:min-h-screen lg:p-12"
         aria-labelledby="register-heading"
+        data-theme-surface="adaptive"
       >
+        <div className="absolute top-4 right-4 z-10">
+          <ThemeToggle variant="floating" />
+        </div>
         <div className="w-full max-w-2xl">
           <form
             className="flex w-full flex-col gap-7 rounded-2xl border border-slate-200 bg-white p-6 shadow-[0px_8px_32px_#050a191a] sm:gap-8 sm:p-10"
@@ -191,6 +202,7 @@ export default function Cadastro() {
             noValidate
           >
             <header className="flex flex-col items-center gap-2 text-center">
+              <BrandLogo size="lg" />
               <h2 id="register-heading" className="text-[32px] font-bold leading-10 text-slate-900">
                 Crie sua conta
               </h2>
@@ -200,16 +212,16 @@ export default function Cadastro() {
             </header>
 
             <fieldset className="m-0 border-0 p-0">
-              <legend className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <legend className="mb-4 w-full border-b border-slate-100 pb-2 text-xs font-bold uppercase tracking-wider text-blue-700">
                 Dados profissionais e de contato
               </legend>
               <div className="grid grid-cols-1 gap-x-5 gap-y-5 sm:grid-cols-2">
                 <div className="flex flex-col gap-2">
-                  <label htmlFor="fname" className="text-sm font-semibold leading-5 text-slate-900">
+                  <label htmlFor="fname" className="text-sm font-semibold leading-5 text-slate-800">
                     Nome completo
                   </label>
                   <input
-                    className={`h-12 w-full rounded-lg border bg-white px-4 text-sm text-slate-900 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 ${classeCampo("nome")}`}
+                    className={`h-12 w-full rounded-lg border bg-slate-50/60 px-4 text-sm text-slate-900 placeholder:text-slate-400 transition hover:border-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 ${classeCampo("nome")}`}
                     type="text"
                     id="fname"
                     name="fname"
@@ -222,18 +234,18 @@ export default function Cadastro() {
                     aria-invalid={Boolean((tocados.nome || enviado) && erros.nome)}
                     onChange={(e) => atualizar("nome", e.target.value)}
                   />
-                  <p className={`text-xs leading-5 ${form.nome.length >= 45 ? "text-red-600" : "text-slate-600"}`}>
+                  <p className={`text-xs leading-5 ${form.nome.length >= 45 ? "text-red-600" : "text-slate-500"}`}>
                     {form.nome.length}/50 caracteres
                   </p>
                   <CampoErro>{(tocados.nome || enviado) && erros.nome}</CampoErro>
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label htmlFor="telefone" className="text-sm font-semibold leading-5 text-slate-900">
+                  <label htmlFor="telefone" className="text-sm font-semibold leading-5 text-slate-800">
                     Telefone
                   </label>
                   <input
-                    className={`h-12 w-full rounded-lg border bg-white px-4 text-sm text-slate-900 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 ${classeCampo("telefone")}`}
+                    className={`h-12 w-full rounded-lg border bg-slate-50/60 px-4 text-sm text-slate-900 placeholder:text-slate-400 transition hover:border-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 ${classeCampo("telefone")}`}
                     type="tel"
                     id="telefone"
                     name="telefone"
@@ -249,11 +261,11 @@ export default function Cadastro() {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label htmlFor="cpf" className="text-sm font-semibold leading-5 text-slate-900">
+                  <label htmlFor="cpf" className="text-sm font-semibold leading-5 text-slate-800">
                     <abbr title="Cadastro de Pessoas Físicas">CPF</abbr>
                   </label>
                   <input
-                    className={`h-12 w-full rounded-lg border bg-white px-4 text-sm text-slate-900 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 ${classeCampo("cpf")}`}
+                    className={`h-12 w-full rounded-lg border bg-slate-50/60 px-4 text-sm text-slate-900 placeholder:text-slate-400 transition hover:border-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 ${classeCampo("cpf")}`}
                     type="text"
                     id="cpf"
                     name="cpf"
@@ -271,11 +283,11 @@ export default function Cadastro() {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label htmlFor="crea" className="text-sm font-semibold leading-5 text-slate-900">
+                  <label htmlFor="crea" className="text-sm font-semibold leading-5 text-slate-800">
                     <abbr title="Conselho Regional de Engenharia e Agronomia">CREA</abbr>
                   </label>
                   <input
-                    className={`h-12 w-full rounded-lg border bg-white px-4 text-sm text-slate-900 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 ${classeCampo("crea")}`}
+                    className={`h-12 w-full rounded-lg border bg-slate-50/60 px-4 text-sm text-slate-900 placeholder:text-slate-400 transition hover:border-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 ${classeCampo("crea")}`}
                     type="text"
                     id="crea"
                     name="crea"
@@ -294,16 +306,16 @@ export default function Cadastro() {
             </fieldset>
 
             <fieldset className="m-0 border-0 p-0">
-              <legend className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <legend className="mb-4 w-full border-b border-slate-100 pb-2 text-xs font-bold uppercase tracking-wider text-blue-700">
                 Credenciais e termos de uso
               </legend>
               <div className="grid grid-cols-1 gap-x-5 gap-y-5 sm:grid-cols-2">
                 <div className="flex flex-col gap-2">
-                  <label htmlFor="femail" className="text-sm font-semibold leading-5 text-slate-900">
+                  <label htmlFor="femail" className="text-sm font-semibold leading-5 text-slate-800">
                     E-mail corporativo
                   </label>
                   <input
-                    className={`h-12 w-full rounded-lg border bg-white px-4 text-sm text-slate-900 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 ${classeCampo("email")}`}
+                    className={`h-12 w-full rounded-lg border bg-slate-50/60 px-4 text-sm text-slate-900 placeholder:text-slate-400 transition hover:border-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 ${classeCampo("email")}`}
                     type="email"
                     id="femail"
                     name="femail"
@@ -321,17 +333,17 @@ export default function Cadastro() {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label htmlFor="fsenha" className="text-sm font-semibold leading-5 text-slate-900">
+                  <label htmlFor="fsenha" className="text-sm font-semibold leading-5 text-slate-800">
                     Senha de acesso
                   </label>
-                  <div className={`flex h-12 w-full items-center gap-2 rounded-lg border bg-white px-4 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100 ${classeCampo("senha")}`}>
+                  <div className={`flex h-12 w-full items-center gap-2 rounded-lg border bg-slate-50/60 px-4 transition hover:border-slate-400 focus-within:border-blue-600 focus-within:bg-white focus-within:ring-2 focus-within:ring-blue-100 ${classeCampo("senha")}`}>
                     <input
-                      className="h-full min-w-0 flex-1 text-sm text-slate-900 placeholder:text-slate-500 focus:outline-none"
+                      className="h-full min-w-0 flex-1 border-0 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
                       type={showPassword ? "text" : "password"}
                       id="fsenha"
                       name="fsenha"
                       required
-                      minLength={6}
+                      minLength={8}
                       autoComplete="new-password"
                       placeholder="Mínimo de 8 caracteres"
                       value={form.senha}
@@ -343,7 +355,7 @@ export default function Cadastro() {
                       onClick={() => setShowPassword((prev) => !prev)}
                       aria-pressed={showPassword}
                       aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
-                      className="shrink-0 cursor-pointer rounded px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      className="shrink-0 cursor-pointer rounded px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50"
                     >
                       {showPassword ? "Ocultar" : "Mostrar"}
                     </button>
@@ -394,25 +406,36 @@ export default function Cadastro() {
               </div>
 
               <div className="mt-5 flex flex-col gap-2">
-                <label className="flex items-center gap-3 text-sm leading-5 text-slate-700" htmlFor="termo">
-                  <input
-                    className={`h-4 w-4 appearance-auto accent-blue-600 ${classeCampo("termo")}`}
-                    type="checkbox"
-                    id="termo"
-                    name="termo"
-                    required
-                    checked={form.termo}
-                    onChange={(e) => atualizar("termo", e.target.checked)}
-                  />
-                  Eu aceito os termos e condições de governança de projetos
-                </label>
+                <div className="flex flex-wrap items-center gap-2 text-sm leading-5 text-slate-700">
+                  <label className="flex cursor-pointer items-center gap-3" htmlFor="termo">
+                    <input
+                      className={`h-4 w-4 cursor-pointer accent-blue-600 ${classeCampo("termo")}`}
+                      type="checkbox"
+                      id="termo"
+                      name="termo"
+                      required
+                      checked={form.termo}
+                      onChange={(e) => atualizar("termo", e.target.checked)}
+                    />
+                    <span>Eu aceito os</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowTermsModal(true)}
+                    className="cursor-pointer font-semibold text-blue-700 underline underline-offset-2 transition hover:text-blue-800"
+                  >
+                    termos e condições de governança de projetos
+                  </button>
+                </div>
                 <CampoErro>{(tocados.termo || enviado) && erros.termo}</CampoErro>
               </div>
             </fieldset>
 
-            <p className="text-sm leading-5 text-red-600" aria-live="polite">
-              {resumo.length > 0 ? `Verifique: ${resumo.join(", ")}.` : ""}
-            </p>
+            {resumo.length > 0 && (
+              <p className="text-sm leading-5 text-red-600" aria-live="polite">
+                {`Verifique: ${resumo.join(", ")}.`}
+              </p>
+            )}
             {sucesso && (
               <p className="text-sm font-semibold text-green-700" role="status">
                 Cadastro enviado com sucesso!
@@ -425,14 +448,14 @@ export default function Cadastro() {
             )}
             <div className="flex flex-col gap-3 sm:flex-row">
               <button
-                className="flex min-h-12 flex-1 items-center justify-center rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold leading-6 text-white transition-colors hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+                className="flex min-h-12 flex-1 cursor-pointer items-center justify-center rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold leading-6 text-white shadow-sm transition-colors hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
                 type="submit"
                 disabled={!formularioValido || isSubmitting}
               >
                 {isSubmitting ? "Enviando cadastro..." : "Enviar Cadastro"}
               </button>
               <button
-                className="flex min-h-12 items-center justify-center rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-medium leading-6 text-slate-700 transition-colors hover:bg-slate-100"
+                className="flex min-h-12 cursor-pointer items-center justify-center rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-medium leading-6 text-slate-700 transition-colors hover:bg-slate-100"
                 type="reset"
               >
                 Limpar
@@ -458,6 +481,14 @@ export default function Cadastro() {
           </footer>
         </div>
       </section>
+      <TermsOfUseModal
+        open={showTermsModal}
+        onClose={() => setShowTermsModal(false)}
+        onAccept={() => {
+          atualizar("termo", true);
+          setShowTermsModal(false);
+        }}
+      />
     </main>
   );
 }

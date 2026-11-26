@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { BrandLogo } from "../../components/BrandLogo";
+import { ThemeToggle } from "../../components/ThemeProvider";
 import { apiRequest, saveSession } from "../../lib/api";
 import { DEMO_PERSONAS } from "../../utils/sessionVault";
 import { useToast } from "../../components/ToastProvider";
@@ -85,13 +87,16 @@ export const CanvasBackground = () => {
       data-infraroute-02-sem-nticos-mode="modo-claro"
     >
       <section
-        className="relative flex flex-1 flex-col items-start justify-center gap-10 self-stretch bg-slate-900 p-8 sm:p-12 lg:p-16"
+        className="relative flex flex-1 flex-col items-start justify-center gap-10 self-stretch bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-8 sm:p-12 lg:p-16"
         aria-labelledby="brand-heading"
       >
         <div className="relative flex w-full flex-col items-start gap-4 self-stretch">
-          <p className="relative self-stretch text-xs font-medium leading-5 tracking-[0] text-slate-300">
-            INFRAROUTE&nbsp;&nbsp;/&nbsp;&nbsp;ENGENHARIA DE REDES
-          </p>
+          <div className="inline-flex items-center gap-3">
+            <BrandLogo size="md" decorative />
+            <p className="relative text-xs font-semibold leading-5 tracking-wider text-blue-400">
+              INFRAROUTE&nbsp;&nbsp;/&nbsp;&nbsp;ENGENHARIA DE REDES
+            </p>
+          </div>
           <h1
             id="brand-heading"
             className="relative self-stretch text-3xl font-bold leading-tight tracking-[0] text-slate-50 sm:text-[40px] sm:leading-[56px]"
@@ -113,9 +118,13 @@ export const CanvasBackground = () => {
         </div>
       </section>
       <section
-        className="relative flex flex-1 flex-col items-center justify-center self-stretch bg-slate-50 p-6 sm:p-10 lg:p-16"
+        className="relative flex flex-1 flex-col items-center justify-center self-stretch bg-slate-50 p-6 transition-colors sm:p-10 lg:p-16"
         aria-labelledby="login-heading"
+        data-theme-surface="adaptive"
       >
+        <div className="absolute top-4 right-4 z-10">
+          <ThemeToggle variant="floating" />
+        </div>
         <div className="relative flex w-full max-w-[480px] flex-col items-center">
           <form
             className="relative flex w-full max-w-[480px] flex-col items-center gap-6 rounded-2xl border border-solid border-slate-200 bg-white p-6 shadow-[0px_8px_32px_#050a191a] sm:p-10"
@@ -123,6 +132,7 @@ export const CanvasBackground = () => {
             noValidate={false}
           >
             <header className="relative flex w-full flex-col items-center gap-2 self-stretch text-center">
+              <BrandLogo size="lg" />
               <h2
                 id="login-heading"
                 className="relative w-fit whitespace-nowrap text-center text-[32px] font-bold leading-10 tracking-[0] text-slate-900"
@@ -149,9 +159,9 @@ export const CanvasBackground = () => {
                     >
                       {field.label}
                     </label>
-                    <div className="relative flex h-12 w-full items-center gap-2 self-stretch rounded-lg border border-solid border-slate-300 bg-white px-4 py-0 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100">
+                    <div className="relative flex h-12 w-full items-center gap-2 self-stretch rounded-lg border border-solid border-slate-300 bg-slate-50/60 px-4 py-0 transition hover:border-slate-400 focus-within:border-blue-600 focus-within:bg-white focus-within:ring-2 focus-within:ring-blue-100">
                       <input
-                        className="relative h-full min-w-0 flex-1 text-sm font-normal leading-5 tracking-[0] text-slate-900 placeholder:text-slate-500 focus:outline-none"
+                        className="relative h-full min-w-0 flex-1 border-0 bg-transparent text-sm font-normal leading-5 tracking-[0] text-slate-900 placeholder:text-slate-400 focus:outline-none"
                         id={field.id}
                         name={field.id}
                         type={resolvedType}
@@ -168,7 +178,7 @@ export const CanvasBackground = () => {
                           onClick={() => setShowPassword((prev) => !prev)}
                           aria-pressed={showPassword}
                           aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
-                          className="shrink-0 cursor-pointer rounded px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                          className="shrink-0 cursor-pointer rounded px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50"
                         >
                           {showPassword ? "Ocultar" : "Mostrar"}
                         </button>
@@ -202,30 +212,32 @@ export const CanvasBackground = () => {
               </Link>
             </p>
 
-            <section
-              aria-label="Perfis rápidos de demonstração"
-              className="flex w-full flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3"
-            >
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                Preenchimento Rápido — {DEMO_PERSONAS.length} Perfis (senha: 123456)
-              </span>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {DEMO_PERSONAS.map((persona) => (
-                  <button
-                    key={persona.id}
-                    type="button"
-                    onClick={() => fillDemoUser(persona.email)}
-                    className="cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-medium text-slate-800 transition hover:border-blue-400 hover:bg-blue-50"
-                  >
-                    <strong className="block text-blue-700">{persona.nomeCurto}</strong>
-                    <span className="text-[10px] text-slate-500">{persona.descricao}</span>
-                  </button>
-                ))}
+            <details className="group flex w-full flex-col rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <summary className="flex cursor-pointer list-none items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-600 marker:hidden">
+                <span>Contas de demonstração ({DEMO_PERSONAS.length} perfis)</span>
+                <span aria-hidden="true" className="text-slate-400 transition group-open:rotate-90">
+                  ▸
+                </span>
+              </summary>
+              <div className="mt-3 space-y-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {DEMO_PERSONAS.map((persona) => (
+                    <button
+                      key={persona.id}
+                      type="button"
+                      onClick={() => fillDemoUser(persona.email)}
+                      className="cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-medium text-slate-800 transition hover:border-blue-400 hover:bg-blue-50"
+                    >
+                      <strong className="block text-blue-700">{persona.nomeCurto}</strong>
+                      <span className="text-[10px] text-slate-500">{persona.descricao}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="m-0 text-[10px] text-slate-500">
+                  Senha padrão: <code>123456</code>. Cada aba mantém sessão própria ao trocar de perfil.
+                </p>
               </div>
-              <p className="m-0 text-[10px] text-slate-500">
-                Dica: cada aba mantém sessão própria ao trocar de perfil, ideal para testar permissões e logs em tempo real lado a lado.
-              </p>
-            </section>
+            </details>
           </form>
           <footer className="mt-6 text-center text-xs text-slate-500">
             <address className="not-italic">

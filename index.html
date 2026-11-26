@@ -8,13 +8,27 @@
       name="description"
       content="Plataforma SaaS multi-tenant para planejamento geoespacial OSP/FTTH, cálculo de Árvore Geradora Mínima (Algoritmo de Prim) e governança de redes ópticas."
     />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" href="/infraroute-logo.png" />
+    <link rel="apple-touch-icon" href="/infraroute-logo.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem("infraroute:ui:theme");
+          var stored = raw ? JSON.parse(raw) : null;
+          var prefersDark =
+            window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var isDark = stored === "dark" || (stored !== "light" && prefersDark);
+          document.documentElement.classList.toggle("dark", isDark);
+          document.documentElement.dataset.theme = isDark ? "dark" : "light";
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <noscript>

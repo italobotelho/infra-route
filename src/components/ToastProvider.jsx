@@ -66,7 +66,7 @@ export function ToastProvider({ children }) {
           <div
             key={toast.id}
             role={toast.type === "error" ? "alert" : "status"}
-            className={`pointer-events-auto flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-xs shadow-2xl backdrop-blur-md transition ${
+            className={`toast-enter pointer-events-auto flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-xs shadow-2xl backdrop-blur-md transition ${
               VARIANT_STYLES[toast.type] || VARIANT_STYLES.info
             }`}
           >

@@ -8,25 +8,62 @@ import { sessionManager } from "../utils/sessionVault";
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/$/, "");
 
 export async function apiRequest(path, options = {}) {
+  const { timeoutMs = 20000, signal: externalSignal, ...fetchOptions } = options;
   const session = getSession();
   const authHeader = session?.access_token
     ? { Authorization: `Bearer ${session.access_token}` }
     : {};
 
+  const controller = new AbortController();
+  let timedOut = false;
+
+  const handleExternalAbort = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      externalSignal.addEventListener("abort", handleExternalAbort, { once: true });
+    }
+  }
+
+  const timeoutId =
+    timeoutMs > 0 && typeof window !== "undefined"
+      ? window.setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs)
+      : null;
+
   let response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
-      ...options,
+      ...fetchOptions,
+      signal: controller.signal,
       headers: {
-        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...(fetchOptions.body ? { "Content-Type": "application/json" } : {}),
         ...authHeader,
-        ...options.headers,
+        ...fetchOptions.headers,
       },
     });
-  } catch {
+  } catch (err) {
+    if (timedOut) {
+      throw new Error(
+        "Tempo limite excedido ao comunicar com o servidor. Tente novamente.",
+      );
+    }
+    if (err?.name === "AbortError") {
+      throw new Error("Requisição cancelada antes da conclusão.");
+    }
     throw new Error(
       "Não foi possível conectar ao servidor da API (porta 8000). Verifique se o backend está em execução.",
     );
+  } finally {
+    if (timeoutId !== null && typeof window !== "undefined") {
+      window.clearTimeout(timeoutId);
+    }
+    if (externalSignal) {
+      externalSignal.removeEventListener("abort", handleExternalAbort);
+    }
   }
 
   let data = null;
@@ -44,6 +81,9 @@ export async function apiRequest(path, options = {}) {
   if (!response.ok) {
     if (response.status === 401) {
       clearSession();
+      if (typeof window !== "undefined" && !String(path).startsWith("/auth/login")) {
+        window.dispatchEvent(new CustomEvent("infraroute:session-expired"));
+      }
     }
     const detail = data?.detalhe || data?.detail;
     const message = Array.isArray(detail)

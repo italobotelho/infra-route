@@ -9,7 +9,6 @@
   input,
   select,
   textarea {
-    @apply appearance-none bg-transparent border-0;
     font: inherit;
   }
 
@@ -118,5 +117,115 @@
 
   to {
     transform: translateY(calc(-100% - var(--gap)));
+  }
+}
+
+/* Transições fluidas de rota, modais, toasts e tela de carregamento */
+.page-transition-enter {
+  animation: page-enter 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.modal-backdrop-enter {
+  animation: modal-backdrop-in 180ms ease-out both;
+}
+
+.modal-panel-enter {
+  animation: modal-panel-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.toast-enter {
+  animation: toast-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.route-progress-bar {
+  animation: route-progress-glide 340ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.loader-orbit {
+  animation: spin 1.15s cubic-bezier(0.5, 0.15, 0.5, 0.85) infinite;
+}
+
+.loader-indeterminate {
+  animation: loader-slide 1.25s ease-in-out infinite;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes modal-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes route-progress-glide {
+  0% {
+    transform: translateX(-100%);
+  }
+  70% {
+    transform: translateX(-10%);
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+}
+
+@keyframes loader-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(40%);
+  }
+  100% {
+    transform: translateX(220%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-transition-enter,
+  .modal-backdrop-enter,
+  .modal-panel-enter,
+  .toast-enter,
+  .route-progress-bar,
+  .loader-orbit,
+  .loader-indeterminate {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transform: none !important;
   }
 }

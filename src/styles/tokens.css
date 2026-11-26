@@ -96,6 +96,15 @@
   --animate-spin: spin 1s linear infinite;
 }
 
+html.dark {
+  color-scheme: dark;
+  --cor-primaria: #3b82f6;
+  --cor-primaria-hover: #60a5fa;
+  --cor-escuro: #f1f5f9;
+  --cor-fundo: #0b1120;
+  --cor-borda: #1e293b;
+}
+
 /* Tipografia base com fallbacks e line-height para legibilidade (Aula 10, Slide 9) */
 body {
   margin: 0;
@@ -103,6 +112,7 @@ body {
   line-height: 1.5;
   background-color: var(--cor-fundo);
   color: var(--cor-escuro);
+  transition: background-color 220ms ease, color 220ms ease;
 }
 
 /* Imagens realmente responsivas (Aula 11, Slide "Imagens Realmente Responsivas") */
@@ -134,9 +144,220 @@ textarea:focus-visible {
   border-collapse: collapse;
 }
 
+/* Barras de progresso semânticas HTML5 (<progress>) sem estilos inline no JSX */
+.barra-progresso {
+  display: block;
+  width: 100%;
+  height: 0.625rem;
+  border: 0;
+  border-radius: 9999px;
+  overflow: hidden;
+  background-color: #f1f5f9;
+  appearance: none;
+}
+
+.barra-progresso::-webkit-progress-bar {
+  background-color: #f1f5f9;
+  border-radius: 9999px;
+}
+
+.barra-progresso::-webkit-progress-value {
+  border-radius: 9999px;
+  transition: width 250ms ease;
+}
+
+.barra-progresso::-moz-progress-bar {
+  border-radius: 9999px;
+  transition: width 250ms ease;
+}
+
+.barra-progresso--blue::-webkit-progress-value {
+  background-color: #2563eb;
+}
+.barra-progresso--blue::-moz-progress-bar {
+  background-color: #2563eb;
+}
+
+.barra-progresso--amber::-webkit-progress-value {
+  background-color: #f59e0b;
+}
+.barra-progresso--amber::-moz-progress-bar {
+  background-color: #f59e0b;
+}
+
+.barra-progresso--emerald::-webkit-progress-value {
+  background-color: #059669;
+}
+.barra-progresso--emerald::-moz-progress-bar {
+  background-color: #059669;
+}
+
+.barra-progresso--slate::-webkit-progress-value {
+  background-color: #64748b;
+}
+.barra-progresso--slate::-moz-progress-bar {
+  background-color: #64748b;
+}
+
+.barra-progresso--indigo::-webkit-progress-value {
+  background-color: #4f46e5;
+}
+.barra-progresso--indigo::-moz-progress-bar {
+  background-color: #4f46e5;
+}
+
+/* Camada adaptativa do Modo Escuro para painéis administrativos, tabelas, modais e auth */
+html.dark .barra-progresso,
+html.dark .barra-progresso::-webkit-progress-bar {
+  background-color: #1e293b;
+}
+
+html.dark [data-theme-surface="adaptive"] {
+  background-color: #0b1120;
+  color: #e2e8f0;
+}
+
+html.dark [data-theme-surface="adaptive"].bg-white,
+html.dark [data-theme-surface="adaptive"] .bg-white {
+  background-color: #0f172a;
+}
+
+html.dark [data-theme-surface="adaptive"] .bg-gray-50,
+html.dark [data-theme-surface="adaptive"] .bg-slate-50 {
+  background-color: #111c32;
+}
+
+html.dark [data-theme-surface="adaptive"] .bg-slate-50\/50,
+html.dark [data-theme-surface="adaptive"] .bg-slate-50\/60,
+html.dark [data-theme-surface="adaptive"] .bg-slate-50\/70,
+html.dark [data-theme-surface="adaptive"] .bg-slate-50\/80 {
+  background-color: rgba(30, 41, 59, 0.55);
+}
+
+html.dark [data-theme-surface="adaptive"] .bg-slate-100 {
+  background-color: #1e293b;
+}
+
+html.dark [data-theme-surface="adaptive"] .bg-blue-50,
+html.dark [data-theme-surface="adaptive"] .bg-blue-50\/60,
+html.dark [data-theme-surface="adaptive"] .bg-blue-50\/30 {
+  background-color: rgba(37, 99, 235, 0.16);
+}
+
+html.dark [data-theme-surface="adaptive"] .bg-emerald-50 {
+  background-color: rgba(16, 185, 129, 0.15);
+}
+
+html.dark [data-theme-surface="adaptive"] .bg-amber-50 {
+  background-color: rgba(245, 158, 11, 0.14);
+}
+
+html.dark [data-theme-surface="adaptive"] .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.15);
+}
+
+html.dark [data-theme-surface="adaptive"] .border-slate-100,
+html.dark [data-theme-surface="adaptive"] .border-slate-200,
+html.dark [data-theme-surface="adaptive"] .border-slate-300 {
+  border-color: #243247;
+}
+
+html.dark [data-theme-surface="adaptive"] .border-blue-200 {
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
+html.dark [data-theme-surface="adaptive"] .border-emerald-200 {
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+html.dark [data-theme-surface="adaptive"] .border-amber-200,
+html.dark [data-theme-surface="adaptive"] .border-amber-300,
+html.dark [data-theme-surface="adaptive"] .border-amber-400 {
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+html.dark [data-theme-surface="adaptive"] .border-red-200 {
+  border-color: rgba(239, 68, 68, 0.38);
+}
+
+html.dark [data-theme-surface="adaptive"] .text-slate-900,
+html.dark [data-theme-surface="adaptive"] .text-gray-900 {
+  color: #f8fafc;
+}
+
+html.dark [data-theme-surface="adaptive"] .text-slate-800 {
+  color: #e2e8f0;
+}
+
+html.dark [data-theme-surface="adaptive"] .text-slate-700 {
+  color: #cbd5e1;
+}
+
+html.dark [data-theme-surface="adaptive"] .text-slate-600,
+html.dark [data-theme-surface="adaptive"] .text-slate-500 {
+  color: #94a3b8;
+}
+
+html.dark [data-theme-surface="adaptive"] .text-blue-700,
+html.dark [data-theme-surface="adaptive"] .text-blue-800,
+html.dark [data-theme-surface="adaptive"] .text-blue-900 {
+  color: #93c5fd;
+}
+
+html.dark [data-theme-surface="adaptive"] .text-emerald-700,
+html.dark [data-theme-surface="adaptive"] .text-emerald-800,
+html.dark [data-theme-surface="adaptive"] .text-emerald-900 {
+  color: #6ee7b7;
+}
+
+html.dark [data-theme-surface="adaptive"] .text-amber-800,
+html.dark [data-theme-surface="adaptive"] .text-amber-900 {
+  color: #fcd34d;
+}
+
+html.dark [data-theme-surface="adaptive"] .text-red-700,
+html.dark [data-theme-surface="adaptive"] .text-red-800,
+html.dark [data-theme-surface="adaptive"] .text-red-900 {
+  color: #fca5a5;
+}
+
+html.dark [data-theme-surface="adaptive"] .text-indigo-700 {
+  color: #a5b4fc;
+}
+
+html.dark [data-theme-surface="adaptive"] input,
+html.dark [data-theme-surface="adaptive"] select,
+html.dark [data-theme-surface="adaptive"] textarea {
+  color: #f1f5f9;
+  border-color: #334155;
+}
+
+html.dark [data-theme-surface="adaptive"] input:not([type="checkbox"]):not([type="radio"]):not(.bg-transparent),
+html.dark [data-theme-surface="adaptive"] select,
+html.dark [data-theme-surface="adaptive"] textarea {
+  background-color: #0b1324;
+}
+
+html.dark [data-theme-surface="adaptive"] input::placeholder,
+html.dark [data-theme-surface="adaptive"] textarea::placeholder {
+  color: #64748b;
+}
+
+html.dark [data-theme-surface="adaptive"] .hover\:bg-slate-50:hover,
+html.dark [data-theme-surface="adaptive"] .hover\:bg-slate-50\/80:hover,
+html.dark [data-theme-surface="adaptive"] .hover\:bg-slate-100:hover,
+html.dark [data-theme-surface="adaptive"] .hover\:bg-slate-100\/70:hover {
+  background-color: #1e293b;
+}
+
+html.dark [data-theme-surface="adaptive"] .hover\:bg-blue-100:hover {
+  background-color: rgba(37, 99, 235, 0.28);
+}
+
 /* Regras de impressão profissional do Memorial Descritivo / BOM */
 @media print {
-  body {
+  body,
+  html.dark body {
     background-color: #ffffff;
     color: #0f172a;
   }
@@ -145,7 +366,8 @@ textarea:focus-visible {
     display: none !important;
   }
 
-  .print-sheet {
+  .print-sheet,
+  html.dark .print-sheet {
     position: static !important;
     inset: auto !important;
     width: 100% !important;
@@ -155,6 +377,8 @@ textarea:focus-visible {
     box-shadow: none !important;
     border: none !important;
     padding: 0 !important;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
   }
 }
 
