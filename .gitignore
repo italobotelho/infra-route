@@ -73,3 +73,6 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Docker overrides locais
+docker-compose.override.yml

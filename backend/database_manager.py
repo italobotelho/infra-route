@@ -16,6 +16,7 @@ from abc import ABC, abstractmethod
 import os
 from pathlib import Path
 import sqlite3
+import threading
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import quote_plus, urlparse
 
@@ -28,8 +29,52 @@ class DatabaseManagerBase(ABC):
     def __init__(self, motor: str, destino: str) -> None:
         self._motor = motor
         self._destino = destino
-        self._conn: Optional[Any] = None
-        self._cursor: Optional[Any] = None
+        self._local = threading.local()
+
+    def _obter_pilha_thread(self) -> List[Tuple[Optional[Any], Optional[Any]]]:
+        pilha = getattr(self._local, "pilha", None)
+        if pilha is None:
+            pilha = []
+            self._local.pilha = pilha
+        return pilha
+
+    @property
+    def _conn(self) -> Optional[Any]:
+        pilha = self._obter_pilha_thread()
+        return pilha[-1][0] if pilha else None
+
+    @_conn.setter
+    def _conn(self, value: Optional[Any]) -> None:
+        pilha = self._obter_pilha_thread()
+        if value is None:
+            if pilha and pilha[-1][1] is None:
+                pilha.pop()
+            elif pilha:
+                pilha[-1] = (None, pilha[-1][1])
+            return
+        if pilha:
+            pilha[-1] = (value, pilha[-1][1])
+        else:
+            pilha.append((value, None))
+
+    @property
+    def _cursor(self) -> Optional[Any]:
+        pilha = self._obter_pilha_thread()
+        return pilha[-1][1] if pilha else None
+
+    @_cursor.setter
+    def _cursor(self, value: Optional[Any]) -> None:
+        pilha = self._obter_pilha_thread()
+        if value is None:
+            if pilha and pilha[-1][0] is None:
+                pilha.pop()
+            elif pilha:
+                pilha[-1] = (pilha[-1][0], None)
+            return
+        if pilha:
+            pilha[-1] = (pilha[-1][0], value)
+        else:
+            pilha.append((None, value))
 
     @property
     def motor(self) -> str:
@@ -50,22 +95,25 @@ class DatabaseManagerBase(ABC):
         return query, tuple(params or ())
 
     def __enter__(self) -> "DatabaseManagerBase":
-        self._conn, self._cursor = self._conectar()
+        conn, cursor = self._conectar()
+        self._obter_pilha_thread().append((conn, cursor))
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        if self._conn is not None:
+        pilha = self._obter_pilha_thread()
+        if not pilha:
+            return
+        conn, cursor = pilha.pop()
+        if conn is not None:
             try:
                 if exc_type is not None:
-                    self._conn.rollback()
+                    conn.rollback()
                 else:
-                    self._conn.commit()
+                    conn.commit()
             finally:
-                if self._cursor is not None:
-                    self._cursor.close()
-                self._conn.close()
-                self._cursor = None
-                self._conn = None
+                if cursor is not None:
+                    cursor.close()
+                conn.close()
 
     def execute_query(
         self, query: str, params: Optional[Sequence[Any]] = None
@@ -170,9 +218,12 @@ class SQLiteDatabaseManager(DatabaseManagerBase):
     def _conectar(self) -> Tuple[Any, Any]:
         if self.db_path != ":memory:":
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        conn = sqlite3.connect(self.db_path, timeout=30.0, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON;")
+        conn.execute("PRAGMA busy_timeout = 30000;")
+        if self.db_path != ":memory:":
+            conn.execute("PRAGMA journal_mode = WAL;")
         cursor = conn.cursor()
         return conn, cursor
 

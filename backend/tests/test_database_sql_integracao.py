@@ -3,6 +3,7 @@ Testes de Integração SQL, POO (`DatabaseManagerBase`), Integridade Referencial
 e CRUD Completo (4ª Entrega — Bancos de Dados Relacionais + Programação Web).
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -359,6 +360,27 @@ class TestDatabaseSQLIntegracao(unittest.TestCase):
         )
         self.assertEqual(len(novos), 1)
         self.assertEqual(novos[0].acao, "PROJETO_STATUS_ALTERADO")
+
+    def test_06_concorrencia_multithread_sem_colisao_de_cursor(self) -> None:
+        s_sa = self.store.autenticar_usuario("secops@infraroute.com.br", "123456")
+
+        def tarefa_concorrente(indice: int) -> dict:
+            if indice % 2 == 0:
+                return self.store.obter_saude_banco(id_usuario_autor=s_sa.id_usuario)
+            self.store.registrar_evento_seguranca_bloqueio(
+                acao="TELEMETRIA_CONCORRENTE",
+                id_usuario=s_sa.id_usuario,
+                id_empresa=1,
+                detalhes=f"Execução concorrente #{indice}",
+            )
+            return {"ok": True, "indice": indice}
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            resultados = list(pool.map(tarefa_concorrente, range(32)))
+
+        saudes = [r for r in resultados if "tabelas" in r]
+        self.assertEqual(len(saudes), 16)
+        self.assertTrue(all(r["status"] == "connected" for r in saudes))
 
 
 if __name__ == "__main__":

@@ -46,9 +46,8 @@ except ImportError:
 BCRYPT_DEFAULT_ROUNDS: int = int(os.getenv("BCRYPT_ROUNDS", "12"))
 BCRYPT_MAX_PASSWORD_BYTES: int = 72
 
-JWT_SECRET_KEY: str = os.getenv(
-    "JWT_SECRET_KEY",
-    "infraroute-secret-key-multi-tenant-rbac-hs256-2026",
+JWT_SECRET_KEY: str = (
+    os.getenv("JWT_SECRET_KEY") or "infraroute-secret-key-multi-tenant-rbac-hs256-2026"
 )
 JWT_EXPIRATION_SECONDS: int = int(os.getenv("JWT_EXPIRATION_SECONDS", "28800"))  # 8h
 
