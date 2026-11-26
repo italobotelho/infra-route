@@ -21,6 +21,9 @@ coverage/
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.p12
 assets/js/config.js
 
 # Build / Distribuição / Bundler Cache
@@ -30,6 +33,9 @@ build/
 out/
 .vite/
 .eslintcache
+.nyc_output/
+.turbo/
+.parcel-cache/
 *.tsbuildinfo
 *.egg-info/
 
@@ -46,6 +52,8 @@ out/
 .cache/
 tmp/
 temp/
+*.bak
+*.tmp
 playwright-report/
 test-results/
 .gemini/
