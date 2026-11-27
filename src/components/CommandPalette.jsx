@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiRequest, getSession } from "../lib/api";
 import { podeAcessarLogsAuditoria } from "../utils/sessionVault";
+import { STORAGE_KEYS, getStorageItem } from "../utils/storage";
 import { useTheme } from "./ThemeProvider";
 
 function buildBaseCommands(canViewAudit, isDark) {
@@ -105,8 +106,12 @@ export function CommandPalette({ open, onClose }) {
 
     if (session?.id_usuario) {
       let cancelled = false;
+      const isAllCompaniesScope =
+        getStorageItem(STORAGE_KEYS.UI_ACTIVE_COMPANY_SCOPE, null) === "ALL";
       const empresaQuery =
-        session?.nivel_acesso === "SuperAdmin" ? 0 : session.id_empresa_padrao;
+        session?.nivel_acesso === "SuperAdmin" || isAllCompaniesScope
+          ? 0
+          : session.id_empresa_padrao;
       setLoadingProjects(true);
       apiRequest(
         `/projetos?id_empresa=${empresaQuery}&id_usuario_autor=${session.id_usuario}`,

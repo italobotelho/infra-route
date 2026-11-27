@@ -153,6 +153,38 @@ CREATE INDEX idx_contem_projeto_status ON Contem (ID_Projeto, Status_Ponto);
 CREATE INDEX idx_log_auditoria_usuario ON Log_Auditoria (ID_Usuario, Acao);
 CREATE INDEX idx_log_auditoria_empresa_ts ON Log_Auditoria (ID_Empresa, Timestamp_UTC DESC);
 
+CREATE TABLE IF NOT EXISTS Projeto_Participante
+(
+ ID_Projeto INT NOT NULL,
+ ID_Usuario INT NOT NULL,
+ Papel VARCHAR(30) NOT NULL CHECK (Papel IN ('Projetista', 'Visualizador')),
+ Data_Inclusao TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ PRIMARY KEY (ID_Projeto, ID_Usuario),
+ FOREIGN KEY (ID_Projeto) REFERENCES Projeto (ID_Projeto) ON DELETE CASCADE,
+ FOREIGN KEY (ID_Usuario) REFERENCES Usuario (ID_Usuario) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS Convite
+(
+ ID_Convite SERIAL PRIMARY KEY,
+ Tipo_Convite VARCHAR(20) NOT NULL CHECK (Tipo_Convite IN ('EMPRESA', 'PROJETO')),
+ ID_Empresa INT NOT NULL,
+ ID_Projeto INT NULL,
+ ID_Usuario_Convidante INT NOT NULL,
+ ID_Usuario_Convidado INT NOT NULL,
+ Nivel_Acesso VARCHAR(30) NOT NULL CHECK (Nivel_Acesso IN ('Administrador', 'Projetista', 'Visualizador')),
+ Status VARCHAR(20) NOT NULL DEFAULT 'PENDENTE' CHECK (Status IN ('PENDENTE', 'ACEITO', 'RECUSADO', 'CANCELADO')),
+ Mensagem TEXT NULL,
+ Data_Criacao TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ Data_Resposta TIMESTAMPTZ NULL,
+ FOREIGN KEY (ID_Empresa) REFERENCES Empresa (ID_Empresa) ON DELETE CASCADE,
+ FOREIGN KEY (ID_Projeto) REFERENCES Projeto (ID_Projeto) ON DELETE CASCADE,
+ FOREIGN KEY (ID_Usuario_Convidante) REFERENCES Usuario (ID_Usuario) ON DELETE CASCADE,
+ FOREIGN KEY (ID_Usuario_Convidado) REFERENCES Usuario (ID_Usuario) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_convite_convidado_status ON Convite (ID_Usuario_Convidado, Status);
+CREATE INDEX IF NOT EXISTS idx_convite_empresa_status ON Convite (ID_Empresa, Status);
+
 -- ==============================================================================
 -- 6. VIEWS ANALÍTICAS E DE AUDITORIA (DQL)
 -- ==============================================================================

@@ -1,17 +1,18 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { getSession, logoutSession } from "../../../lib/api";
+import { apiRequest, getSession, logoutSession, saveSession } from "../../../lib/api";
 import { BrandLogo } from "../../../components/BrandLogo";
 import { LiveAuditDrawer } from "../../../components/LiveAuditDrawer";
 import { QuickPersonaSwitcher } from "../../../components/QuickPersonaSwitcher";
 import { ThemeToggle } from "../../../components/ThemeProvider";
 import { useToast } from "../../../components/ToastProvider";
-import { STORAGE_KEYS, getStorageItem, setStorageItem } from "../../../utils/storage";
+import { STORAGE_KEYS, getStorageItem, removeStorageItem, setStorageItem } from "../../../utils/storage";
 import default27 from "../assets/default-27.svg";
 
 const navigationItems = [
   { label: "Dashboard", path: "/dashboard", icon: "dashboard" },
   { label: "Projetos", path: "/projetos", icon: "projects" },
+  { label: "Equipe & Convites", path: "/equipe", icon: "team" },
   { label: "Governança & SQL", path: "/governanca", icon: "governance" },
   { label: "Central de Ajuda", path: "/ajuda", icon: "help" },
 ];
@@ -32,6 +33,15 @@ function SidebarNavIcon({ icon, active }) {
       return (
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={`h-5 w-5 shrink-0 ${colorClass}`} aria-hidden="true">
           <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+        </svg>
+      );
+    case "team":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className={`h-5 w-5 shrink-0 ${colorClass}`} aria-hidden="true">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
       );
     case "governance":
@@ -62,6 +72,62 @@ export const WorkspaceNavigationSidebarSection = ({ onOpenCommandPalette }) => {
     Boolean(getStorageItem(STORAGE_KEYS.UI_SIDEBAR_COLLAPSED, false)),
   );
   const session = getSession();
+  const [empresasVinculadas, setEmpresasVinculadas] = useState(
+    () => session?.empresas_vinculadas || [],
+  );
+  const [convitesPendentesCount, setConvitesPendentesCount] = useState(0);
+
+  const carregarColaboracaoSidebar = useCallback(async () => {
+    const sessaoAtual = getSession();
+    if (!sessaoAtual?.access_token) return;
+    try {
+      const [emps, convs] = await Promise.all([
+        apiRequest("/colaboracao/empresas"),
+        apiRequest("/colaboracao/convites/recebidos"),
+      ]);
+      if (Array.isArray(emps)) setEmpresasVinculadas(emps);
+      if (Array.isArray(convs)) {
+        setConvitesPendentesCount(convs.filter((c) => c.status === "PENDENTE").length);
+      }
+    } catch {
+      // Silencioso na sidebar
+    }
+  }, []);
+
+  useEffect(() => {
+    carregarColaboracaoSidebar();
+    const handler = () => carregarColaboracaoSidebar();
+    window.addEventListener("infraroute:colaboracao-updated", handler);
+    return () => window.removeEventListener("infraroute:colaboracao-updated", handler);
+  }, [carregarColaboracaoSidebar]);
+
+  const handleTrocarEmpresaSidebar = async (valorSelecionado) => {
+    if (valorSelecionado === "ALL") {
+      setStorageItem(STORAGE_KEYS.UI_ACTIVE_COMPANY_SCOPE, "ALL");
+      showToast("Exibindo projetos de todas as suas empresas vinculadas.", {
+        type: "info",
+      });
+      window.location.reload();
+      return;
+    }
+    try {
+      removeStorageItem(STORAGE_KEYS.UI_ACTIVE_COMPANY_SCOPE);
+      const novaSessao = await apiRequest("/colaboracao/trocar-empresa", {
+        method: "POST",
+        body: JSON.stringify({ id_empresa: Number(valorSelecionado) }),
+      });
+      saveSession(novaSessao);
+      showToast(`Empresa ativa alternada para ${novaSessao.razao_social_empresa}.`, {
+        type: "success",
+      });
+      window.location.reload();
+    } catch (err) {
+      showToast(err.message || "Erro ao alternar empresa ativa.", { type: "error" });
+    }
+  };
+
+  const isAllCompaniesScope =
+    getStorageItem(STORAGE_KEYS.UI_ACTIVE_COMPANY_SCOPE, null) === "ALL";
 
   useEffect(() => {
     setStorageItem(STORAGE_KEYS.UI_SIDEBAR_COLLAPSED, collapsed);
@@ -87,6 +153,7 @@ export const WorkspaceNavigationSidebarSection = ({ onOpenCommandPalette }) => {
 
   const handleLogout = async () => {
     setMobileMenuOpen(false);
+    removeStorageItem(STORAGE_KEYS.UI_ACTIVE_COMPANY_SCOPE);
     await logoutSession();
     showToast("Sessão encerrada com segurança.", { type: "info" });
     navigate("/login", { replace: true });
@@ -231,11 +298,16 @@ export const WorkspaceNavigationSidebarSection = ({ onOpenCommandPalette }) => {
                         <SidebarNavIcon icon={item.icon} active={isActive} />
                         {!collapsed && (
                           <span
-                            className={`truncate text-[13px] ${
+                            className={`flex flex-1 items-center justify-between truncate text-[13px] ${
                               isActive ? "font-semibold text-white" : "font-medium text-slate-300"
                             }`}
                           >
-                            {item.label}
+                            <span className="truncate">{item.label}</span>
+                            {item.icon === "team" && convitesPendentesCount > 0 && (
+                              <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-slate-950">
+                                {convitesPendentesCount}
+                              </span>
+                            )}
                           </span>
                         )}
                       </>
@@ -263,9 +335,25 @@ export const WorkspaceNavigationSidebarSection = ({ onOpenCommandPalette }) => {
               >
                 EMPRESA ATIVA
               </h2>
-              <p className="m-0 text-xs font-medium leading-5 text-slate-200">
-                {session?.razao_social_empresa || "InfraTelecom Engenharia Óptica S.A."}
-              </p>
+              {empresasVinculadas.length > 1 ? (
+                <select
+                  aria-label="Selecionar empresa ativa"
+                  value={isAllCompaniesScope ? "ALL" : (session?.id_empresa_padrao || "")}
+                  onChange={(e) => handleTrocarEmpresaSidebar(e.target.value)}
+                  className="mt-1 w-full cursor-pointer rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs font-medium text-slate-100 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="ALL">Todas as empresas (visão unificada)</option>
+                  {empresasVinculadas.map((emp) => (
+                    <option key={emp.id_empresa} value={emp.id_empresa}>
+                      {emp.razao_social} ({emp.nivel_acesso})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="m-0 text-xs font-medium leading-5 text-slate-200">
+                  {session?.razao_social_empresa || "InfraTelecom Engenharia Óptica S.A."}
+                </p>
+              )}
             </section>
           )}
 

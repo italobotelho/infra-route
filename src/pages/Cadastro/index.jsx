@@ -292,14 +292,17 @@ export default function Cadastro() {
                     id="crea"
                     name="crea"
                     required
-                    inputMode="numeric"
+                    inputMode="text"
                     autoComplete="off"
-                    placeholder="123456/D"
-                    maxLength={10}
+                    placeholder="Ex.: SP-5060708090"
+                    maxLength={15}
                     value={form.crea}
                     aria-invalid={Boolean((tocados.crea || enviado) && erros.crea)}
                     onChange={(e) => atualizar("crea", formatarCrea(e.target.value))}
                   />
+                  <p className="text-xs leading-5 text-slate-500">
+                    Formato: UF + 6 a 10 dígitos (opcional /D ou /P).
+                  </p>
                   <CampoErro>{(tocados.crea || enviado) && erros.crea}</CampoErro>
                 </div>
               </div>

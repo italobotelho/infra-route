@@ -15,6 +15,7 @@ const LoginPage = lazy(() =>
 );
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Projetos = lazy(() => import("./pages/Projetos"));
+const Equipe = lazy(() => import("./pages/Equipe"));
 const Governanca = lazy(() => import("./pages/Governanca"));
 const Ajuda = lazy(() => import("./pages/Ajuda"));
 const Workspace = lazy(() => import("./pages/Workspace"));
@@ -99,6 +100,7 @@ export default function App() {
               <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/projetos" element={<Projetos />} />
+                <Route path="/equipe" element={<Equipe />} />
                 <Route path="/governanca" element={<Governanca />} />
                 <Route path="/ajuda" element={<Ajuda />} />
               </Route>

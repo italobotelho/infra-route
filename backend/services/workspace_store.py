@@ -12,9 +12,13 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from backend.repositories.sql_repository import InfraRouteSQLRepository
+from backend.services.crea_validation_service import (
+    CreaValidationService,
+    ResultadoValidacaoCrea,
+)
 from backend.services.exceptions import (
     NaoAutenticadoError,
     PermissaoInsuficienteError,
@@ -78,6 +82,36 @@ class SessaoAutenticada:
     token_type: str = field(default="bearer", compare=False)
     email_verificado: bool = field(default=True, compare=False)
     codigo_verificacao_dev: Optional[str] = field(default=None, compare=False)
+    empresas_vinculadas: List[Dict[str, Any]] = field(default_factory=list, compare=False)
+
+
+@dataclass(frozen=True)
+class ParticipanteProjeto:
+    id_projeto: int
+    id_usuario: int
+    papel: str
+    data_inclusao: str
+
+
+@dataclass(frozen=True)
+class ConviteColaboracao:
+    id_convite: int
+    tipo_convite: str
+    id_empresa: int
+    razao_social_empresa: str
+    id_projeto: Optional[int]
+    nome_projeto: Optional[str]
+    id_usuario_convidante: int
+    nome_convidante: str
+    email_convidante: str
+    id_usuario_convidado: int
+    nome_convidado: str
+    email_convidado: str
+    nivel_acesso: str
+    status: str
+    mensagem: Optional[str]
+    data_criacao: str
+    data_resposta: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -137,6 +171,7 @@ class WorkspaceStoreService:
         self._sql_repo: Optional[InfraRouteSQLRepository] = (
             sql_repo if sql_repo is not None else (InfraRouteSQLRepository() if persistir_banco else None)
         )
+        self.validador_crea = CreaValidationService()
         self.resetar_estado_padrao()
         if self._persistir_arquivo:
             self._carregar_usuarios_dev()
@@ -385,6 +420,51 @@ class WorkspaceStoreService:
             default=399,
         )
         self._proximo_id_ponto = max(400, max_ponto + 1)
+        self.participantes_projeto = {}
+        for row in estado.get("participantes_projeto", []):
+            pid = int(row["ID_Projeto"])
+            uid = int(row["ID_Usuario"])
+            self.participantes_projeto[(pid, uid)] = ParticipanteProjeto(
+                id_projeto=pid,
+                id_usuario=uid,
+                papel=row["Papel"],
+                data_inclusao=normalizar_timestamp_utc_iso(str(row.get("Data_Inclusao") or "")),
+            )
+        self.convites = {}
+        for row in estado.get("convites", []):
+            cid = int(row["ID_Convite"])
+            id_emp = int(row["ID_Empresa"])
+            id_proj = int(row["ID_Projeto"]) if row.get("ID_Projeto") is not None else None
+            uid_conv = int(row["ID_Usuario_Convidante"])
+            uid_dest = int(row["ID_Usuario_Convidado"])
+            emp = self.empresas.get(id_emp)
+            proj = self.projetos.get(id_proj) if id_proj is not None else None
+            u_conv = self.usuarios.get(uid_conv)
+            u_dest = self.usuarios.get(uid_dest)
+            self.convites[cid] = ConviteColaboracao(
+                id_convite=cid,
+                tipo_convite=row["Tipo_Convite"],
+                id_empresa=id_emp,
+                razao_social_empresa=emp.razao_social if emp else f"Empresa #{id_emp}",
+                id_projeto=id_proj,
+                nome_projeto=proj.nome if proj else None,
+                id_usuario_convidante=uid_conv,
+                nome_convidante=u_conv.nome if u_conv else f"Usuário #{uid_conv}",
+                email_convidante=u_conv.email if u_conv else "",
+                id_usuario_convidado=uid_dest,
+                nome_convidado=u_dest.nome if u_dest else f"Usuário #{uid_dest}",
+                email_convidado=u_dest.email if u_dest else "",
+                nivel_acesso=row["Nivel_Acesso"],
+                status=row["Status"],
+                mensagem=row.get("Mensagem"),
+                data_criacao=normalizar_timestamp_utc_iso(str(row.get("Data_Criacao") or "")),
+                data_resposta=(
+                    normalizar_timestamp_utc_iso(str(row["Data_Resposta"]))
+                    if row.get("Data_Resposta")
+                    else None
+                ),
+            )
+        self._proximo_id_convite = max(self.convites.keys(), default=0) + 1
 
     def obter_saude_banco(self, id_usuario_autor: Optional[int] = None) -> Dict[str, object]:
         id_empresa_escopo: Optional[int] = None
@@ -431,6 +511,8 @@ class WorkspaceStoreService:
             for uid, usr in self.usuarios.items():
                 if uid <= 5:
                     continue
+                vinculo_usr = next((v for v in self.vinculos if v.id_usuario == uid), None)
+                emp_usr = self.empresas.get(vinculo_usr.id_empresa) if vinculo_usr else None
                 registros.append(
                     {
                         "id_usuario": usr.id_usuario,
@@ -441,6 +523,14 @@ class WorkspaceStoreService:
                         "crea": usr.crea,
                         "senha_hash": self._senhas_usuarios.get(uid, ""),
                         "email_verificado": self._emails_verificados.get(uid, False),
+                        "id_empresa": vinculo_usr.id_empresa if vinculo_usr else 1,
+                        "nivel_acesso": (
+                            vinculo_usr.nivel_acesso.value
+                            if vinculo_usr
+                            else NivelAcessoRBAC.PROJETISTA.value
+                        ),
+                        "cnpj_empresa": emp_usr.cnpj if emp_usr else None,
+                        "razao_social_empresa": emp_usr.razao_social if emp_usr else None,
                     }
                 )
             self._ARQUIVO_DEV_USUARIOS.write_text(
@@ -467,17 +557,29 @@ class WorkspaceStoreService:
                     email=item["email"],
                     crea=item.get("crea"),
                 )
+                id_emp = int(item.get("id_empresa") or 1)
+                if id_emp not in self.empresas:
+                    cnpj_emp = item.get("cnpj_empresa") or self._gerar_cnpj_workspace(id_emp, uid)
+                    razao_emp = item.get("razao_social_empresa") or f"Workspace {usr.nome}"[:100]
+                    nova_emp = Empresa(
+                        id_empresa=id_emp,
+                        cnpj=cnpj_emp,
+                        razao_social=razao_emp,
+                    )
+                    self.empresas[id_emp] = nova_emp
+                    self.governanca.empresas[id_emp] = nova_emp
+                nivel_str = item.get("nivel_acesso") or NivelAcessoRBAC.PROJETISTA.value
                 vinculo = VinculoCorporate(
                     id_usuario=uid,
-                    id_empresa=1,
-                    nivel_acesso=NivelAcessoRBAC.PROJETISTA,
+                    id_empresa=id_emp,
+                    nivel_acesso=NivelAcessoRBAC(nivel_str),
                 )
                 self.usuarios[uid] = usr
                 self._senhas_usuarios[uid] = item["senha_hash"]
                 self._emails_verificados[uid] = bool(item.get("email_verificado", False))
                 self.vinculos.append(vinculo)
                 self.governanca.usuarios[uid] = usr
-                self.governanca.vinculos[(uid, 1)] = vinculo
+                self.governanca.vinculos[(uid, id_emp)] = vinculo
         except Exception:
             pass
 
@@ -683,6 +785,9 @@ class WorkspaceStoreService:
             self.verificador_email = GerenciadorVerificacaoEmail()
             self.trilha_auditoria: List[EventoAuditoria] = []
             self._proximo_id_auditoria: int = 1
+            self.participantes_projeto: Dict[Tuple[int, int], ParticipanteProjeto] = {}
+            self.convites: Dict[int, ConviteColaboracao] = {}
+            self._proximo_id_convite: int = 1
             revogador_tokens.limpar()
             gerenciador_tickets_stream.limpar()
 
@@ -1278,7 +1383,11 @@ class WorkspaceStoreService:
         )
         return sessao
 
-    def _construir_sessao_usuario(self, usuario: Usuario) -> SessaoAutenticada:
+    def _construir_sessao_usuario(
+        self,
+        usuario: Usuario,
+        id_empresa_ativa: Optional[int] = None,
+    ) -> SessaoAutenticada:
         vinculos_usuario = [
             v for v in self.vinculos if v.id_usuario == usuario.id_usuario
         ]
@@ -1288,6 +1397,25 @@ class WorkspaceStoreService:
             )
 
         vinculo_principal = vinculos_usuario[0]
+        if id_empresa_ativa is not None:
+            for v in vinculos_usuario:
+                if v.id_empresa == id_empresa_ativa:
+                    vinculo_principal = v
+                    break
+
+        empresas_vinculadas = []
+        for v in vinculos_usuario:
+            emp_v = self.empresas.get(v.id_empresa)
+            if emp_v:
+                empresas_vinculadas.append(
+                    {
+                        "id_empresa": emp_v.id_empresa,
+                        "razao_social": emp_v.razao_social,
+                        "cnpj": emp_v.cnpj,
+                        "nivel_acesso": v.nivel_acesso.value,
+                    }
+                )
+
         empresa = self.empresas[vinculo_principal.id_empresa]
         token = gerar_token_acesso(
             id_usuario=usuario.id_usuario,
@@ -1317,6 +1445,7 @@ class WorkspaceStoreService:
             token_type="bearer",
             email_verificado=verificado,
             codigo_verificacao_dev=codigo_dev,
+            empresas_vinculadas=empresas_vinculadas,
         )
 
     def validar_token_sessao(self, token: str) -> SessaoAutenticada:
@@ -1327,7 +1456,7 @@ class WorkspaceStoreService:
             usuario = self.usuarios.get(payload.id_usuario)
         if usuario is None:
             raise NaoAutenticadoError("Usuário associado ao token não existe mais.")
-        return self._construir_sessao_usuario(usuario)
+        return self._construir_sessao_usuario(usuario, id_empresa_ativa=payload.id_empresa)
 
     def revogar_token_sessao(self, token: str) -> None:
         payload = decodificar_token_acesso(token)
@@ -1381,6 +1510,22 @@ class WorkspaceStoreService:
         )
         return codigo
 
+    def _gerar_cnpj_workspace(self, id_empresa: int, id_usuario: int) -> str:
+        cnpjs_existentes = {
+            "".join(filter(str.isdigit, emp.cnpj)) for emp in self.empresas.values()
+        }
+        salt = 0
+        while True:
+            bloco_a = (id_empresa + salt) % 89 + 10
+            bloco_b = (id_usuario + salt) % 899 + 100
+            bloco_c = ((id_empresa * 137 + id_usuario * 17 + salt) % 899) + 100
+            dv = ((id_empresa * 13 + id_usuario * 7 + salt) % 89) + 10
+            candidato = f"{bloco_a:02d}.{bloco_b:03d}.{bloco_c:03d}/0001-{dv:02d}"
+            digitos = "".join(filter(str.isdigit, candidato))
+            if len(set(digitos)) > 1 and digitos not in cnpjs_existentes:
+                return candidato
+            salt += 1
+
     def registrar_usuario(
         self,
         nome: str,
@@ -1393,8 +1538,12 @@ class WorkspaceStoreService:
         validar_forca_senha(senha)
         email_norm = email.strip().lower()
         cpf_norm = "".join(filter(str.isdigit, cpf))
-        crea_norm = crea.strip().upper()
-        crea_normalizado = crea_norm if crea_norm.startswith("SP-") else f"SP-{crea_norm}"
+        resultado_crea = self.validador_crea.validar_registro(
+            crea=crea,
+            cpf=cpf,
+            uf_padrao="SP",
+        )
+        crea_normalizado = resultado_crea.crea_normalizado
         if any(usr.email.strip().lower() == email_norm for usr in self.usuarios.values()):
             raise ValidacaoDominioError("Já existe um usuário cadastrado com este e-mail.")
         if any("".join(filter(str.isdigit, usr.cpf)) == cpf_norm for usr in self.usuarios.values()):
@@ -1406,6 +1555,14 @@ class WorkspaceStoreService:
             raise ValidacaoDominioError("Já existe um usuário cadastrado com este CREA.")
 
         novo_id = max(self.usuarios, default=0) + 1
+        novo_id_empresa = max(self.empresas, default=0) + 1
+        razao_social_workspace = f"Workspace {nome.strip()}"[:100]
+        cnpj_workspace = self._gerar_cnpj_workspace(novo_id_empresa, novo_id)
+        nova_empresa = Empresa(
+            id_empresa=novo_id_empresa,
+            cnpj=cnpj_workspace,
+            razao_social=razao_social_workspace,
+        )
         usuario = Usuario(
             id_usuario=novo_id,
             nome=nome.strip(),
@@ -1416,10 +1573,12 @@ class WorkspaceStoreService:
         )
         vinculo = VinculoCorporate(
             id_usuario=novo_id,
-            id_empresa=1,
-            nivel_acesso=NivelAcessoRBAC.PROJETISTA,
+            id_empresa=novo_id_empresa,
+            nivel_acesso=NivelAcessoRBAC.ADMINISTRADOR,
         )
 
+        self.empresas[novo_id_empresa] = nova_empresa
+        self.governanca.empresas[novo_id_empresa] = nova_empresa
         self.usuarios[novo_id] = usuario
         senha_hash = gerar_hash_senha(senha)
         self._senhas_usuarios[novo_id] = senha_hash
@@ -1427,7 +1586,7 @@ class WorkspaceStoreService:
         self.verificador_email.gerar_codigo_otp(email_norm)
         self.vinculos.append(vinculo)
         self.governanca.usuarios[novo_id] = usuario
-        self.governanca.vinculos[(novo_id, 1)] = vinculo
+        self.governanca.vinculos[(novo_id, novo_id_empresa)] = vinculo
         if self._persistir_banco and self._sql_repo is not None:
             self._sql_repo.inserir_usuario_engenheiro(
                 id_usuario=novo_id,
@@ -1437,8 +1596,10 @@ class WorkspaceStoreService:
                 email=usuario.email,
                 senha_hash=senha_hash,
                 crea=crea_normalizado,
-                id_empresa=1,
-                nivel_acesso=NivelAcessoRBAC.PROJETISTA.value,
+                id_empresa=novo_id_empresa,
+                nivel_acesso=NivelAcessoRBAC.ADMINISTRADOR.value,
+                cnpj_empresa=nova_empresa.cnpj,
+                razao_social_empresa=nova_empresa.razao_social,
             )
         self._salvar_usuarios_dev()
 
@@ -1446,32 +1607,92 @@ class WorkspaceStoreService:
             acao="CADASTRO_USUARIO",
             id_usuario=novo_id,
             email_usuario=email_norm,
-            detalhes=f"Engenheiro cadastrado (CREA {crea_normalizado}) e código OTP gerado.",
+            id_empresa=novo_id_empresa,
+            detalhes=(
+                f"Engenheiro cadastrado (CREA {crea_normalizado}, "
+                f"provedor={resultado_crea.provedor}, workspace=#{novo_id_empresa}) e código OTP gerado."
+            ),
         )
         return self.autenticar_usuario(email_norm, senha)
+
+    def validar_crea_publico(self, crea: str) -> ResultadoValidacaoCrea:
+        """Valida formato, UF e provedor externo (quando configurado) para um CREA."""
+        return self.validador_crea.validar_registro(crea=crea, uf_padrao=None)
+
+    def _validar_acesso_projeto(
+        self,
+        projeto: ProjetoDominio,
+        id_usuario_autor: int,
+        exigir_escrita: bool = False,
+    ) -> None:
+        try:
+            self.governanca.validar_acesso_tenant(
+                id_usuario=id_usuario_autor,
+                id_empresa=projeto.id_empresa,
+                exigir_escrita=exigir_escrita,
+            )
+            return
+        except ViolacaoMultiTenantError:
+            participante = self.participantes_projeto.get(
+                (projeto.id_projeto, id_usuario_autor)
+            )
+            if participante is None:
+                raise
+            if exigir_escrita and participante.papel != NivelAcessoRBAC.PROJETISTA.value:
+                raise PermissaoInsuficienteError(
+                    "Seu convite neste projeto permite apenas visualização."
+                )
 
     def listar_projetos(
         self, id_empresa: int = 1, id_usuario_autor: int = 1
     ) -> List[ProjetoDominio]:
-        if id_empresa == 0 and self.governanca.usuario_eh_super_admin(id_usuario_autor):
-            return list(self.projetos.values())
+        if id_empresa == 0:
+            if self.governanca.usuario_eh_super_admin(id_usuario_autor):
+                return list(self.projetos.values())
+            empresas_autor = {
+                v.id_empresa for v in self.vinculos if v.id_usuario == id_usuario_autor
+            }
+            if not empresas_autor:
+                raise ViolacaoMultiTenantError(
+                    "Usuário não possui vínculo contratual ativo com nenhuma empresa."
+                )
+            projetos_resultado = [
+                p for p in self.projetos.values() if p.id_empresa in empresas_autor
+            ]
+            ids_vistos = {p.id_projeto for p in projetos_resultado}
+            for (pid, uid), _ in self.participantes_projeto.items():
+                if uid == id_usuario_autor and pid not in ids_vistos:
+                    proj_conv = self.projetos.get(pid)
+                    if proj_conv is not None:
+                        projetos_resultado.append(proj_conv)
+                        ids_vistos.add(pid)
+            return projetos_resultado
+
         alvo_empresa = id_empresa if id_empresa > 0 else (self._obter_empresa_usuario(id_usuario_autor) or 1)
         self.governanca.validar_acesso_tenant(
             id_usuario=id_usuario_autor,
             id_empresa=alvo_empresa,
             exigir_escrita=False,
         )
-        return [
+        projetos_resultado = [
             p for p in self.projetos.values() if p.id_empresa == alvo_empresa
         ]
+        ids_vistos = {p.id_projeto for p in projetos_resultado}
+        for (pid, uid), _ in self.participantes_projeto.items():
+            if uid == id_usuario_autor and pid not in ids_vistos:
+                proj_conv = self.projetos.get(pid)
+                if proj_conv is not None:
+                    projetos_resultado.append(proj_conv)
+                    ids_vistos.add(pid)
+        return projetos_resultado
 
     def obter_projeto(self, id_projeto: int, id_usuario_autor: int = 1) -> ProjetoDominio:
         projeto = self.projetos.get(id_projeto)
         if projeto is None:
             raise RecursoNaoEncontradoError(f"Projeto {id_projeto} não encontrado.")
-        self.governanca.validar_acesso_tenant(
-            id_usuario=id_usuario_autor,
-            id_empresa=projeto.id_empresa,
+        self._validar_acesso_projeto(
+            projeto=projeto,
+            id_usuario_autor=id_usuario_autor,
             exigir_escrita=False,
         )
         return projeto
@@ -1524,9 +1745,9 @@ class WorkspaceStoreService:
         id_usuario_autor: int = 1,
     ) -> ProjetoDominio:
         projeto = self.obter_projeto(id_projeto=id_projeto, id_usuario_autor=id_usuario_autor)
-        self.governanca.validar_acesso_tenant(
-            id_usuario=id_usuario_autor,
-            id_empresa=projeto.id_empresa,
+        self._validar_acesso_projeto(
+            projeto=projeto,
+            id_usuario_autor=id_usuario_autor,
             exigir_escrita=True,
         )
         self.governanca._verificar_projeto_editavel(projeto)
@@ -1552,9 +1773,9 @@ class WorkspaceStoreService:
         id_usuario_autor: int = 1,
     ) -> ProjetoDominio:
         projeto = self.obter_projeto(id_projeto=id_projeto, id_usuario_autor=id_usuario_autor)
-        self.governanca.validar_acesso_tenant(
-            id_usuario=id_usuario_autor,
-            id_empresa=projeto.id_empresa,
+        self._validar_acesso_projeto(
+            projeto=projeto,
+            id_usuario_autor=id_usuario_autor,
             exigir_escrita=True,
         )
         status_enum = StatusProjetoEnum(novo_status)
@@ -1581,9 +1802,9 @@ class WorkspaceStoreService:
         id_usuario_autor: int = 1,
     ) -> PontoRede:
         projeto = self.obter_projeto(id_projeto=id_projeto, id_usuario_autor=id_usuario_autor)
-        self.governanca.validar_acesso_tenant(
-            id_usuario=id_usuario_autor,
-            id_empresa=projeto.id_empresa,
+        self._validar_acesso_projeto(
+            projeto=projeto,
+            id_usuario_autor=id_usuario_autor,
             exigir_escrita=True,
         )
         self.governanca._verificar_projeto_editavel(projeto)
@@ -1659,9 +1880,9 @@ class WorkspaceStoreService:
         id_usuario_autor: int = 1,
     ) -> PontoRede:
         projeto = self.obter_projeto(id_projeto=id_projeto, id_usuario_autor=id_usuario_autor)
-        self.governanca.validar_acesso_tenant(
-            id_usuario=id_usuario_autor,
-            id_empresa=projeto.id_empresa,
+        self._validar_acesso_projeto(
+            projeto=projeto,
+            id_usuario_autor=id_usuario_autor,
             exigir_escrita=True,
         )
         self.governanca._verificar_projeto_editavel(projeto)
@@ -1783,9 +2004,9 @@ class WorkspaceStoreService:
         ajustar_malha_viaria: bool = False,
     ) -> ResultadoMSTProjeto:
         projeto = self.obter_projeto(id_projeto=id_projeto, id_usuario_autor=id_usuario_autor)
-        self.governanca.validar_acesso_tenant(
-            id_usuario=id_usuario_autor,
-            id_empresa=projeto.id_empresa,
+        self._validar_acesso_projeto(
+            projeto=projeto,
+            id_usuario_autor=id_usuario_autor,
             exigir_escrita=True,
         )
 
@@ -1884,9 +2105,9 @@ class WorkspaceStoreService:
             novo_status_ponto == StatusPontoProjeto.ATIVO
             and pontos[idx_alvo].status_ponto != StatusPontoProjeto.ATIVO.value
         ):
-            self.governanca.validar_acesso_tenant(
-                id_usuario=id_usuario_autor,
-                id_empresa=projeto.id_empresa,
+            self._validar_acesso_projeto(
+                projeto=projeto,
+                id_usuario_autor=id_usuario_autor,
                 exigir_escrita=True,
             )
             self.governanca._verificar_projeto_editavel(projeto)
@@ -1899,14 +2120,29 @@ class WorkspaceStoreService:
                 detalhes=f"Ponto #{id_ponto} ('{ponto_atualizado.descricao}') restaurado para 'Ativo' no Projeto #{id_projeto}.",
             )
         else:
-            ponto_atualizado = self.governanca.aplicar_soft_delete_ponto_no_projeto(
-                id_usuario_autor=id_usuario_autor,
-                projeto=projeto,
-                ponto=pontos[idx_alvo],
-                trechos_ativos=self.trechos_por_projeto.get(id_projeto, []),
-                novo_status_ponto=novo_status_ponto,
-                forcar_cascata_topologica=forcar_recalculo_mst,
+            eh_participante_externo = (
+                (id_projeto, id_usuario_autor) in self.participantes_projeto
+                and (id_usuario_autor, projeto.id_empresa) not in self.governanca.vinculos
             )
+            if eh_participante_externo:
+                self._validar_acesso_projeto(
+                    projeto=projeto,
+                    id_usuario_autor=id_usuario_autor,
+                    exigir_escrita=True,
+                )
+                self.governanca._verificar_projeto_editavel(projeto)
+                ponto_atualizado = replace(
+                    pontos[idx_alvo], status_ponto=novo_status_ponto.value
+                )
+            else:
+                ponto_atualizado = self.governanca.aplicar_soft_delete_ponto_no_projeto(
+                    id_usuario_autor=id_usuario_autor,
+                    projeto=projeto,
+                    ponto=pontos[idx_alvo],
+                    trechos_ativos=self.trechos_por_projeto.get(id_projeto, []),
+                    novo_status_ponto=novo_status_ponto,
+                    forcar_cascata_topologica=forcar_recalculo_mst,
+                )
             self._registrar_evento_auditoria(
                 acao="PONTO_REMOVIDO",
                 id_usuario=id_usuario_autor,
@@ -1927,6 +2163,405 @@ class WorkspaceStoreService:
 
         self._salvar_workspace_dev()
         return ponto_atualizado
+
+    # ==========================================================================
+    # Colaboração Multi-Empresa, Convites e Participação em Projetos
+    # ==========================================================================
+
+    def _exigir_admin_empresa(self, id_usuario: int, id_empresa: int) -> VinculoCorporate:
+        vinculo = self.governanca.vinculos.get((id_usuario, id_empresa))
+        if vinculo is None:
+            raise ViolacaoMultiTenantError(
+                f"Usuário {id_usuario} não possui vínculo ativo com a empresa {id_empresa}."
+            )
+        if vinculo.nivel_acesso != NivelAcessoRBAC.ADMINISTRADOR:
+            raise PermissaoInsuficienteError(
+                "Apenas usuários com permissão Administrador na empresa podem gerenciar convites e membros."
+            )
+        return vinculo
+
+    def listar_empresas_usuario(
+        self,
+        id_usuario: int,
+        id_empresa_ativa: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        vinculos_usuario = [v for v in self.vinculos if v.id_usuario == id_usuario]
+        resultado: List[Dict[str, Any]] = []
+        for idx, v in enumerate(vinculos_usuario):
+            emp = self.empresas.get(v.id_empresa)
+            if emp:
+                ativa = (
+                    emp.id_empresa == id_empresa_ativa
+                    if id_empresa_ativa is not None
+                    else idx == 0
+                )
+                resultado.append(
+                    {
+                        "id_empresa": emp.id_empresa,
+                        "razao_social": emp.razao_social,
+                        "cnpj": emp.cnpj,
+                        "nivel_acesso": v.nivel_acesso.value,
+                        "ativa": ativa,
+                    }
+                )
+        return resultado
+
+    def trocar_empresa_ativa(
+        self,
+        id_usuario: int,
+        id_empresa_destino: int,
+    ) -> SessaoAutenticada:
+        usuario = self.usuarios.get(id_usuario)
+        if usuario is None:
+            raise RecursoNaoEncontradoError(f"Usuário {id_usuario} não encontrado.")
+        vinculo = self.governanca.vinculos.get((id_usuario, id_empresa_destino))
+        if vinculo is None:
+            raise ViolacaoMultiTenantError(
+                f"Você não possui vínculo ativo com a empresa #{id_empresa_destino}."
+            )
+        sessao = self._construir_sessao_usuario(usuario, id_empresa_ativa=id_empresa_destino)
+        self._registrar_evento_auditoria(
+            acao="TROCA_EMPRESA_ATIVA",
+            id_usuario=id_usuario,
+            email_usuario=usuario.email,
+            id_empresa=id_empresa_destino,
+            detalhes=f"Empresa ativa alternada para '{sessao.razao_social_empresa}' (#{id_empresa_destino}).",
+        )
+        return sessao
+
+    def listar_membros_empresa(
+        self,
+        id_empresa: int,
+        id_usuario_autor: int,
+    ) -> Dict[str, Any]:
+        self.governanca.validar_acesso_tenant(
+            id_usuario=id_usuario_autor,
+            id_empresa=id_empresa,
+            exigir_escrita=False,
+        )
+        membros_empresa: List[Dict[str, Any]] = []
+        for vinc in self.vinculos:
+            if vinc.id_empresa != id_empresa:
+                continue
+            usr = self.usuarios.get(vinc.id_usuario)
+            if usr:
+                membros_empresa.append(
+                    {
+                        "id_usuario": usr.id_usuario,
+                        "nome": usr.nome,
+                        "email": usr.email,
+                        "crea": usr.crea,
+                        "nivel_acesso": vinc.nivel_acesso.value,
+                    }
+                )
+        membros_empresa.sort(key=lambda m: (m["nivel_acesso"], m["nome"]))
+
+        ids_projetos_empresa = {
+            p.id_projeto for p in self.projetos.values() if p.id_empresa == id_empresa
+        }
+        participantes_projetos: List[Dict[str, Any]] = []
+        for (pid, uid), part in self.participantes_projeto.items():
+            if pid not in ids_projetos_empresa:
+                continue
+            proj = self.projetos.get(pid)
+            usr = self.usuarios.get(uid)
+            if proj and usr:
+                participantes_projetos.append(
+                    {
+                        "id_projeto": pid,
+                        "nome_projeto": proj.nome,
+                        "id_usuario": uid,
+                        "nome_usuario": usr.nome,
+                        "email_usuario": usr.email,
+                        "crea": usr.crea,
+                        "papel": part.papel,
+                        "data_inclusao": part.data_inclusao,
+                    }
+                )
+        participantes_projetos.sort(key=lambda p: (p["id_projeto"], p["nome_usuario"]))
+
+        return {
+            "id_empresa": id_empresa,
+            "membros_empresa": membros_empresa,
+            "participantes_projetos": participantes_projetos,
+        }
+
+    def criar_convite(
+        self,
+        *,
+        id_usuario_convidante: int,
+        id_empresa: int,
+        tipo_convite: str,
+        email_convidado: str,
+        nivel_acesso: str,
+        id_projeto: Optional[int] = None,
+        mensagem: Optional[str] = None,
+    ) -> ConviteColaboracao:
+        self._exigir_admin_empresa(id_usuario_convidante, id_empresa)
+        tipo_norm = (tipo_convite or "").strip().upper()
+        if tipo_norm not in ("EMPRESA", "PROJETO"):
+            raise ValidacaoDominioError("Tipo de convite inválido. Utilize 'EMPRESA' ou 'PROJETO'.")
+
+        email_norm = (email_convidado or "").strip().lower()
+        convidado = next(
+            (u for u in self.usuarios.values() if u.email.strip().lower() == email_norm),
+            None,
+        )
+        if convidado is None:
+            raise RecursoNaoEncontradoError(
+                f"Nenhum usuário cadastrado encontrado com o e-mail '{email_norm}'."
+            )
+        if convidado.id_usuario == id_usuario_convidante:
+            raise ValidacaoDominioError("Você não pode enviar um convite para si mesmo.")
+
+        empresa = self.empresas.get(id_empresa)
+        if empresa is None:
+            raise RecursoNaoEncontradoError(f"Empresa {id_empresa} não encontrada.")
+        convidante = self.usuarios[id_usuario_convidante]
+
+        nome_projeto: Optional[str] = None
+        if tipo_norm == "PROJETO":
+            if id_projeto is None:
+                raise ValidacaoDominioError("Informe o projeto para convites do tipo PROJETO.")
+            projeto = self.projetos.get(id_projeto)
+            if projeto is None:
+                raise RecursoNaoEncontradoError(f"Projeto {id_projeto} não encontrado.")
+            if projeto.id_empresa != id_empresa:
+                raise ViolacaoMultiTenantError(
+                    "O projeto informado não pertence à empresa ativa."
+                )
+            if nivel_acesso not in (
+                NivelAcessoRBAC.PROJETISTA.value,
+                NivelAcessoRBAC.VISUALIZADOR.value,
+            ):
+                raise ValidacaoDominioError(
+                    "Convites para projeto aceitam apenas os papéis 'Projetista' ou 'Visualizador'."
+                )
+            part_atual = self.participantes_projeto.get((id_projeto, convidado.id_usuario))
+            if part_atual and part_atual.papel == nivel_acesso:
+                raise ValidacaoDominioError(
+                    f"Este usuário já participa do projeto '{projeto.nome}' como {nivel_acesso}."
+                )
+            nome_projeto = projeto.nome
+        else:
+            id_projeto = None
+            if nivel_acesso not in (
+                NivelAcessoRBAC.ADMINISTRADOR.value,
+                NivelAcessoRBAC.PROJETISTA.value,
+                NivelAcessoRBAC.VISUALIZADOR.value,
+            ):
+                raise ValidacaoDominioError(
+                    "Convites para empresa aceitam apenas 'Administrador', 'Projetista' ou 'Visualizador'."
+                )
+            vinc_atual = self.governanca.vinculos.get((convidado.id_usuario, id_empresa))
+            if vinc_atual and vinc_atual.nivel_acesso.value == nivel_acesso:
+                raise ValidacaoDominioError(
+                    f"Este usuário já faz parte da empresa '{empresa.razao_social}' como {nivel_acesso}."
+                )
+
+        duplicado = any(
+            c.status == "PENDENTE"
+            and c.tipo_convite == tipo_norm
+            and c.id_empresa == id_empresa
+            and c.id_projeto == id_projeto
+            and c.id_usuario_convidado == convidado.id_usuario
+            for c in self.convites.values()
+        )
+        if duplicado:
+            raise ValidacaoDominioError(
+                "Já existe um convite pendente para este usuário com o mesmo destino."
+            )
+
+        novo_id = self._proximo_id_convite
+        self._proximo_id_convite += 1
+        agora = agora_utc_iso()
+        msg_limpa = mensagem.strip() if mensagem and mensagem.strip() else None
+
+        convite = ConviteColaboracao(
+            id_convite=novo_id,
+            tipo_convite=tipo_norm,
+            id_empresa=id_empresa,
+            razao_social_empresa=empresa.razao_social,
+            id_projeto=id_projeto,
+            nome_projeto=nome_projeto,
+            id_usuario_convidante=id_usuario_convidante,
+            nome_convidante=convidante.nome,
+            email_convidante=convidante.email,
+            id_usuario_convidado=convidado.id_usuario,
+            nome_convidado=convidado.nome,
+            email_convidado=convidado.email,
+            nivel_acesso=nivel_acesso,
+            status="PENDENTE",
+            mensagem=msg_limpa,
+            data_criacao=agora,
+            data_resposta=None,
+        )
+        self.convites[novo_id] = convite
+        if self._persistir_banco and self._sql_repo is not None:
+            self._sql_repo.inserir_convite(
+                id_convite=convite.id_convite,
+                tipo_convite=convite.tipo_convite,
+                id_empresa=convite.id_empresa,
+                id_projeto=convite.id_projeto,
+                id_usuario_convidante=convite.id_usuario_convidante,
+                id_usuario_convidado=convite.id_usuario_convidado,
+                nivel_acesso=convite.nivel_acesso,
+                status=convite.status,
+                mensagem=convite.mensagem,
+                data_criacao=convite.data_criacao,
+            )
+
+        alvo_desc = (
+            f"projeto '{nome_projeto}' (#{id_projeto})"
+            if tipo_norm == "PROJETO"
+            else f"empresa '{empresa.razao_social}' (#{id_empresa})"
+        )
+        self._registrar_evento_auditoria(
+            acao="CONVITE_ENVIADO",
+            id_usuario=id_usuario_convidante,
+            email_usuario=convidante.email,
+            id_empresa=id_empresa,
+            detalhes=f"Convite #{novo_id} ({tipo_norm}) enviado para {convidado.email} como {nivel_acesso} em {alvo_desc}.",
+        )
+        return convite
+
+    def listar_convites_recebidos(self, id_usuario: int) -> List[ConviteColaboracao]:
+        lista = [
+            c for c in self.convites.values() if c.id_usuario_convidado == id_usuario
+        ]
+        lista.sort(key=lambda c: (0 if c.status == "PENDENTE" else 1, -c.id_convite))
+        return lista
+
+    def listar_convites_enviados(
+        self, id_empresa: int, id_usuario_autor: int
+    ) -> List[ConviteColaboracao]:
+        self._exigir_admin_empresa(id_usuario_autor, id_empresa)
+        lista = [c for c in self.convites.values() if c.id_empresa == id_empresa]
+        lista.sort(key=lambda c: -c.id_convite)
+        return lista
+
+    def responder_convite(
+        self,
+        *,
+        id_convite: int,
+        id_usuario_convidado: int,
+        aceitar: bool,
+        id_empresa_ativa_atual: Optional[int] = None,
+    ) -> Tuple[ConviteColaboracao, SessaoAutenticada]:
+        convite = self.convites.get(id_convite)
+        if convite is None:
+            raise RecursoNaoEncontradoError(f"Convite {id_convite} não encontrado.")
+        if convite.id_usuario_convidado != id_usuario_convidado:
+            raise PermissaoInsuficienteError(
+                "Apenas o usuário convidado pode aceitar ou recusar este convite."
+            )
+        if convite.status != "PENDENTE":
+            raise ValidacaoDominioError(
+                f"Este convite já foi processado com status '{convite.status}'."
+            )
+
+        agora = agora_utc_iso()
+        novo_status = "ACEITO" if aceitar else "RECUSADO"
+        convite_atualizado = replace(convite, status=novo_status, data_resposta=agora)
+        self.convites[id_convite] = convite_atualizado
+
+        if self._persistir_banco and self._sql_repo is not None:
+            self._sql_repo.atualizar_status_convite(id_convite, novo_status, agora)
+
+        usuario = self.usuarios[id_usuario_convidado]
+        if aceitar:
+            if convite.tipo_convite == "EMPRESA":
+                papel_enum = NivelAcessoRBAC(convite.nivel_acesso)
+                novo_vinculo = VinculoCorporate(
+                    id_usuario=id_usuario_convidado,
+                    id_empresa=convite.id_empresa,
+                    nivel_acesso=papel_enum,
+                )
+                self.vinculos = [
+                    v
+                    for v in self.vinculos
+                    if not (
+                        v.id_usuario == id_usuario_convidado
+                        and v.id_empresa == convite.id_empresa
+                    )
+                ]
+                self.vinculos.append(novo_vinculo)
+                self.governanca.vinculos[(id_usuario_convidado, convite.id_empresa)] = (
+                    novo_vinculo
+                )
+                if self._persistir_banco and self._sql_repo is not None:
+                    self._sql_repo.inserir_ou_atualizar_vinculo(
+                        id_usuario_convidado,
+                        convite.id_empresa,
+                        papel_enum.value,
+                    )
+            else:
+                assert convite.id_projeto is not None
+                participante = ParticipanteProjeto(
+                    id_projeto=convite.id_projeto,
+                    id_usuario=id_usuario_convidado,
+                    papel=convite.nivel_acesso,
+                    data_inclusao=agora,
+                )
+                self.participantes_projeto[(convite.id_projeto, id_usuario_convidado)] = (
+                    participante
+                )
+                if self._persistir_banco and self._sql_repo is not None:
+                    self._sql_repo.inserir_ou_atualizar_participante_projeto(
+                        convite.id_projeto,
+                        id_usuario_convidado,
+                        convite.nivel_acesso,
+                        agora,
+                    )
+
+            self._registrar_evento_auditoria(
+                acao="CONVITE_ACEITO",
+                id_usuario=id_usuario_convidado,
+                email_usuario=usuario.email,
+                id_empresa=convite.id_empresa,
+                detalhes=f"Convite #{id_convite} ({convite.tipo_convite}) aceito por {usuario.email}.",
+            )
+        else:
+            self._registrar_evento_auditoria(
+                acao="CONVITE_RECUSADO",
+                id_usuario=id_usuario_convidado,
+                email_usuario=usuario.email,
+                id_empresa=convite.id_empresa,
+                detalhes=f"Convite #{id_convite} ({convite.tipo_convite}) recusado por {usuario.email}.",
+            )
+
+        sessao = self._construir_sessao_usuario(
+            usuario,
+            id_empresa_ativa=id_empresa_ativa_atual,
+        )
+        return convite_atualizado, sessao
+
+    def cancelar_convite(
+        self,
+        *,
+        id_convite: int,
+        id_usuario_autor: int,
+    ) -> ConviteColaboracao:
+        convite = self.convites.get(id_convite)
+        if convite is None:
+            raise RecursoNaoEncontradoError(f"Convite {id_convite} não encontrado.")
+        self._exigir_admin_empresa(id_usuario_autor, convite.id_empresa)
+        if convite.status != "PENDENTE":
+            raise ValidacaoDominioError(
+                f"Apenas convites pendentes podem ser cancelados (status atual: {convite.status})."
+            )
+        agora = agora_utc_iso()
+        atualizado = replace(convite, status="CANCELADO", data_resposta=agora)
+        self.convites[id_convite] = atualizado
+        if self._persistir_banco and self._sql_repo is not None:
+            self._sql_repo.atualizar_status_convite(id_convite, "CANCELADO", agora)
+        self._registrar_evento_auditoria(
+            acao="CONVITE_CANCELADO",
+            id_usuario=id_usuario_autor,
+            id_empresa=convite.id_empresa,
+            detalhes=f"Convite #{id_convite} cancelado pelo administrador.",
+        )
+        return atualizado
 
 
 workspace_store = WorkspaceStoreService(persistir_arquivo=False, persistir_banco=True)

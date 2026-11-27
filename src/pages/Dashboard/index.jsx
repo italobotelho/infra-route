@@ -8,6 +8,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { formatarDataBr } from "../../utils/dateTime";
 import { baixarArquivo, gerarCsvCarteiraProjetos } from "../../utils/projectExport";
 import { podeAcessarLogsAuditoria } from "../../utils/sessionVault";
+import { STORAGE_KEYS, getStorageItem } from "../../utils/storage";
 
 const STATUS_ITEMS = [
   { key: "Em Planejamento", barClass: "barra-progresso--blue", badge: "bg-blue-50 text-blue-700 border-blue-200" },
@@ -21,7 +22,12 @@ export const Dashboard = () => {
   const { showToast } = useToast();
   const session = getSession();
   const canViewAudit = podeAcessarLogsAuditoria(session?.nivel_acesso);
-  const empresaParam = session?.nivel_acesso === "SuperAdmin" ? 0 : session.id_empresa_padrao;
+  const isAllCompaniesScope =
+    getStorageItem(STORAGE_KEYS.UI_ACTIVE_COMPANY_SCOPE, null) === "ALL";
+  const empresaParam =
+    session?.nivel_acesso === "SuperAdmin" || isAllCompaniesScope
+      ? 0
+      : session.id_empresa_padrao;
 
   const [projects, setProjects] = useState([]);
   const [dbHealth, setDbHealth] = useState(null);

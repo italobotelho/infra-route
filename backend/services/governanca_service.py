@@ -18,6 +18,7 @@ import math
 import re
 from typing import Dict, Optional, Sequence, Set, Tuple
 
+from backend.services.crea_validation_service import validar_e_normalizar_crea
 from backend.services.exceptions import (
     PermissaoInsuficienteError,
     RecursoNaoEncontradoError,
@@ -89,8 +90,8 @@ class Usuario:
             raise ValidacaoDominioError("Telefone do usuário não pode ser vazio.")
         if not (self.email and "@" in self.email and "." in self.email.split("@")[-1]):
             raise ValidacaoDominioError(f"E-mail inválido: {self.email}")
-        if self.crea is not None and not self.crea.strip():
-            raise ValidacaoDominioError("Registro CREA não pode ser uma string em branco.")
+        if self.crea is not None:
+            validar_e_normalizar_crea(self.crea)
 
     @property
     def eh_engenheiro(self) -> bool:

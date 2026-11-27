@@ -157,9 +157,10 @@ def verificar_senha(senha_plana: str, senha_hash: str) -> bool:
 
     if bcrypt is not None:
         try:
-            return bcrypt.checkpw(senha_bytes, senha_hash.encode("utf-8"))
+            if bcrypt.checkpw(senha_bytes, senha_hash.encode("utf-8")):
+                return True
         except (ValueError, TypeError):
-            return False
+            pass
     if not re.match(r"^\$2[aby]\$\d{2}\$.{53}$", senha_hash):
         return False
     try:

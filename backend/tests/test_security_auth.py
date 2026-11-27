@@ -61,6 +61,11 @@ class TestSegurancaBcryptEJwt(unittest.TestCase):
 
         self.assertFalse(verificar_senha(senha_73_bytes, gerar_hash_senha("Valida123!", rounds=4)))
 
+    def test_02b_verifica_hash_legado_pbkdf2_mesmo_com_bcrypt_instalado(self) -> None:
+        hash_legado_123456 = "$2b$12$eGQ8UZUw//AMP/z7iYONIgBzVu/V1njcKmkWrE/lsCFMpZsOjvCVY"
+        self.assertTrue(verificar_senha("123456", hash_legado_123456))
+        self.assertFalse(verificar_senha("senha_errada", hash_legado_123456))
+
     def test_03_workspace_store_nunca_armazena_senha_em_texto_plano(self) -> None:
         for id_usr, hash_salvo in self.store._senhas_usuarios.items():
             self.assertTrue(
@@ -216,8 +221,8 @@ class TestSegurancaBcryptEJwt(unittest.TestCase):
         self.assertTrue(sessao_confirmada.email_verificado)
         self.assertIsNone(sessao_confirmada.codigo_verificacao_dev)
 
-        # Verifica que a trilha de auditoria registrou os eventos de segurança
-        eventos = self.store.listar_eventos_auditoria(id_usuario_autor=1)
+        # Verifica que a trilha de auditoria registrou os eventos de segurança no workspace da usuária
+        eventos = self.store.listar_eventos_auditoria(id_usuario_autor=sessao.id_usuario)
         acoes = [ev.acao for ev in eventos]
         self.assertIn("CADASTRO_USUARIO", acoes)
         self.assertIn("LOGIN_SUCESSO", acoes)

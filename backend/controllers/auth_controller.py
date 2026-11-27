@@ -22,9 +22,10 @@ from backend.models.schemas import (
     ReenviarCodigoRequestSchema,
     RegistroRequestSchema,
     TicketStreamResponseSchema,
+    ValidarCreaResponseSchema,
     VerificarEmailRequestSchema,
 )
-from backend.services.exceptions import NaoAutenticadoError
+from backend.services.exceptions import NaoAutenticadoError, ValidacaoDominioError
 from backend.services.security_service import gerenciador_tickets_stream
 from backend.services.workspace_store import SessaoAutenticada, workspace_store
 
@@ -89,6 +90,27 @@ def registrar_colaborador(payload: RegistroRequestSchema) -> LoginResponseSchema
         crea=payload.crea,
     )
     return LoginResponseSchema(**asdict(sessao))
+
+
+@router.get(
+    "/validar-crea",
+    response_model=ValidarCreaResponseSchema,
+    status_code=status.HTTP_200_OK,
+    summary="Valida formato, UF e situação do registro CREA (com provedor externo opcional)",
+)
+def validar_crea_endpoint(
+    crea: str = Query(..., min_length=1, max_length=32, description="Registro CREA (ex.: SP-5060708090)"),
+) -> ValidarCreaResponseSchema:
+    try:
+        resultado = workspace_store.validar_crea_publico(crea)
+        return ValidarCreaResponseSchema(**asdict(resultado))
+    except ValidacaoDominioError as exc:
+        return ValidarCreaResponseSchema(
+            valido=False,
+            provedor="local",
+            situacao="INVALIDO",
+            detalhes=str(exc),
+        )
 
 
 @router.get(

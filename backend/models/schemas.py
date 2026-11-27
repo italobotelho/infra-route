@@ -8,6 +8,7 @@ import re
 from typing import Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 
+from backend.services.crea_validation_service import validar_e_normalizar_crea
 from backend.services.security_service import validar_forca_senha
 
 
@@ -89,6 +90,31 @@ class RegistroRequestSchema(BaseModel):
             raise ValueError("CPF inválido: deve conter 11 dígitos numéricos não repetidos.")
         return v
 
+    @field_validator("crea")
+    @classmethod
+    def validar_formato_crea(cls, v: str) -> str:
+        resultado = validar_e_normalizar_crea(v, uf_padrao=None)
+        return resultado.crea_normalizado
+
+
+class ValidarCreaResponseSchema(BaseModel):
+    valido: bool
+    crea_normalizado: Optional[str] = None
+    uf: Optional[str] = None
+    numero: Optional[str] = None
+    sufixo: Optional[str] = None
+    provedor: str
+    situacao: str
+    detalhes: str
+
+
+class EmpresaVinculadaSchema(BaseModel):
+    id_empresa: int
+    razao_social: str
+    cnpj: str
+    nivel_acesso: EnumNivelAcesso
+    ativa: Optional[bool] = None
+
 
 class LoginResponseSchema(BaseModel):
     id_usuario: int
@@ -112,6 +138,7 @@ class LoginResponseSchema(BaseModel):
         default=None,
         description="Código OTP de 6 dígitos exposto apenas em ambiente de desenvolvimento local",
     )
+    empresas_vinculadas: List[EmpresaVinculadaSchema] = Field(default_factory=list)
 
 
 class VerificarEmailRequestSchema(BaseModel):
@@ -471,3 +498,69 @@ class ResultadoMSTProjetoSchema(BaseModel):
         default=0.0,
         description="Percentual de economia de cabo proporcionado pela AGM (Prim) em relação à malha candidata",
     )
+
+
+class TrocarEmpresaRequestSchema(BaseModel):
+    id_empresa: int = Field(..., gt=0)
+
+
+class CriarConviteRequestSchema(BaseModel):
+    tipo_convite: str = Field(..., pattern="^(EMPRESA|PROJETO|empresa|projeto)$")
+    email_convidado: str = Field(..., min_length=3)
+    nivel_acesso: EnumNivelAcesso
+    id_projeto: Optional[int] = Field(default=None, gt=0)
+    mensagem: Optional[str] = Field(default=None, max_length=300)
+
+
+class ResponderConviteRequestSchema(BaseModel):
+    aceitar: bool
+
+
+class ConviteSchema(BaseModel):
+    id_convite: int
+    tipo_convite: str
+    id_empresa: int
+    razao_social_empresa: str
+    id_projeto: Optional[int] = None
+    nome_projeto: Optional[str] = None
+    id_usuario_convidante: int
+    nome_convidante: str
+    email_convidante: str
+    id_usuario_convidado: int
+    nome_convidado: str
+    email_convidado: str
+    nivel_acesso: str
+    status: str
+    mensagem: Optional[str] = None
+    data_criacao: str
+    data_resposta: Optional[str] = None
+
+
+class ResponderConviteResponseSchema(BaseModel):
+    convite: ConviteSchema
+    sessao: LoginResponseSchema
+
+
+class MembroEmpresaSchema(BaseModel):
+    id_usuario: int
+    nome: str
+    email: str
+    crea: Optional[str] = None
+    nivel_acesso: str
+
+
+class ParticipanteProjetoSchema(BaseModel):
+    id_projeto: int
+    nome_projeto: str
+    id_usuario: int
+    nome_usuario: str
+    email_usuario: str
+    crea: Optional[str] = None
+    papel: str
+    data_inclusao: str
+
+
+class MembrosEmpresaResponseSchema(BaseModel):
+    id_empresa: int
+    membros_empresa: List[MembroEmpresaSchema]
+    participantes_projetos: List[ParticipanteProjetoSchema]

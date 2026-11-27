@@ -96,7 +96,7 @@ class TestDatabaseSQLIntegracao(unittest.TestCase):
         # 2. Cria projeto e renomeia (CRUD Create + Update)
         novo_proj = self.store.criar_projeto(
             nome="Anel Óptico Barão Geraldo",
-            id_empresa=1,
+            id_empresa=sessao.id_empresa_padrao,
             id_engenheiro=sessao.id_usuario,
             id_usuario_autor=sessao.id_usuario,
         )

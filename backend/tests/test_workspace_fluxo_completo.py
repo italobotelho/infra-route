@@ -48,8 +48,29 @@ class TestWorkspaceFluxoCompleto(unittest.TestCase):
         )
 
         self.assertEqual(sessao.id_usuario, 6)
-        self.assertEqual(sessao.id_empresa_padrao, 1)
-        self.assertEqual(sessao.nivel_acesso, "Projetista")
+        self.assertGreater(sessao.id_empresa_padrao, 2)
+        self.assertEqual(sessao.nivel_acesso, "Administrador")
+        self.assertEqual(
+            self.store.listar_projetos(
+                id_empresa=sessao.id_empresa_padrao,
+                id_usuario_autor=sessao.id_usuario,
+            ),
+            [],
+        )
+        with self.assertRaises(ViolacaoMultiTenantError):
+            self.store.obter_projeto(1, id_usuario_autor=sessao.id_usuario)
+
+        novo_proj = self.store.criar_projeto(
+            nome="Projeto Inicial da Ana",
+            id_empresa=sessao.id_empresa_padrao,
+            id_engenheiro=sessao.id_usuario,
+            id_usuario_autor=sessao.id_usuario,
+        )
+        projetos_ana = self.store.listar_projetos(
+            id_empresa=sessao.id_empresa_padrao,
+            id_usuario_autor=sessao.id_usuario,
+        )
+        self.assertEqual([p.id_projeto for p in projetos_ana], [novo_proj.id_projeto])
         self.assertEqual(
             self.store.autenticar_usuario("ANA@EMPRESA.COM.BR", "SenhaForte123!"),
             sessao,

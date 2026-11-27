@@ -52,7 +52,10 @@ export const CurrentProjectsSection = () => {
   const [session, setSessionState] = useState(() => getSession());
   const isViewer = ehPerfilSomenteLeituraProjetos(session?.nivel_acesso);
   const isSuperAdmin = session?.nivel_acesso === "SuperAdmin";
-  const empresaQuery = isSuperAdmin ? 0 : session.id_empresa_padrao;
+  const isAllCompaniesScope =
+    getStorageItem(STORAGE_KEYS.UI_ACTIVE_COMPANY_SCOPE, null) === "ALL";
+  const empresaQuery =
+    isSuperAdmin || isAllCompaniesScope ? 0 : session?.id_empresa_padrao;
 
   const [otpCode, setOtpCode] = useState("");
   const [otpMessage, setOtpMessage] = useState("");
@@ -152,11 +155,18 @@ export const CurrentProjectsSection = () => {
           ? apiRequest("/auth/opcoes-filtro-auditoria").catch(() => null)
           : Promise.resolve(null),
       ]);
+      const nextMap = {};
+      if (Array.isArray(session?.empresas_vinculadas)) {
+        session.empresas_vinculadas.forEach((emp) => {
+          nextMap[emp.id_empresa] = emp.razao_social;
+        });
+      }
       if (opcoes?.empresas?.length) {
-        const nextMap = {};
         opcoes.empresas.forEach((emp) => {
           nextMap[emp.id_empresa] = emp.razao_social;
         });
+      }
+      if (Object.keys(nextMap).length > 0) {
         setCompanyMap(nextMap);
       }
       setProjects(

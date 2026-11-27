@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.controllers.auth_controller import exigir_sessao_autenticada, router as auth_router
+from backend.controllers.colaboracao_controller import router as colaboracao_router
 from backend.controllers.projetos_controller import router as projetos_router
 from backend.controllers.topologia_controller import router as topologia_router
 from backend.services.exceptions import (
@@ -171,6 +172,7 @@ async def infraroute_domain_exception_handler(
 
 
 app.include_router(auth_router)
+app.include_router(colaboracao_router)
 app.include_router(projetos_router)
 app.include_router(topologia_router)
 

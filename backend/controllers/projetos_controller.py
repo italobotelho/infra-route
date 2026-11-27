@@ -115,17 +115,19 @@ def cadastrar_cabo_catalogo(
     summary="Lista os projetos da empresa ativa com métricas memoizadas O(1)",
 )
 def listar_projetos(
-    id_empresa: int = Query(default=0, ge=0),
+    id_empresa: Optional[int] = Query(default=None, ge=0),
     id_usuario_autor: Optional[int] = Query(default=None, gt=0),
     sessao: Optional[SessaoAutenticada] = Depends(obter_sessao_opcional),
 ) -> List[ProjetoResumoSchema]:
     autor_id = _resolver_autor_query(sessao, id_usuario_autor)
-    empresa_alvo = id_empresa
-    if empresa_alvo == 0 and sessao is not None:
-        eh_sa = workspace_store.governanca.usuario_eh_super_admin(sessao.id_usuario)
-        empresa_alvo = 0 if eh_sa else sessao.id_empresa_padrao
-    elif empresa_alvo == 0:
-        empresa_alvo = 1
+    if id_empresa is None:
+        if sessao is not None:
+            eh_sa = workspace_store.governanca.usuario_eh_super_admin(sessao.id_usuario)
+            empresa_alvo = 0 if eh_sa else sessao.id_empresa_padrao
+        else:
+            empresa_alvo = 1
+    else:
+        empresa_alvo = id_empresa
     projetos = workspace_store.listar_projetos(
         id_empresa=empresa_alvo,
         id_usuario_autor=autor_id,

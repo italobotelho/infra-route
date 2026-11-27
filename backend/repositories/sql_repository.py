@@ -136,6 +136,36 @@ CREATE INDEX IF NOT EXISTS idx_ponto_rede_coords ON Ponto_Rede (Latitude, Longit
 CREATE INDEX IF NOT EXISTS idx_contem_projeto_status ON Contem (ID_Projeto, Status_Ponto);
 CREATE INDEX IF NOT EXISTS idx_trecho_rede_nodos ON Trecho_Rede (Origem_ID, Destino_ID);
 CREATE INDEX IF NOT EXISTS idx_log_auditoria_usuario ON Log_Auditoria (ID_Usuario, Acao);
+
+CREATE TABLE IF NOT EXISTS Projeto_Participante (
+    ID_Projeto INTEGER NOT NULL,
+    ID_Usuario INTEGER NOT NULL,
+    Papel VARCHAR(30) NOT NULL CHECK (Papel IN ('Projetista', 'Visualizador')),
+    Data_Inclusao TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (ID_Projeto, ID_Usuario),
+    FOREIGN KEY (ID_Projeto) REFERENCES Projeto (ID_Projeto) ON DELETE CASCADE,
+    FOREIGN KEY (ID_Usuario) REFERENCES Usuario (ID_Usuario) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS Convite (
+    ID_Convite INTEGER PRIMARY KEY AUTOINCREMENT,
+    Tipo_Convite VARCHAR(20) NOT NULL CHECK (Tipo_Convite IN ('EMPRESA', 'PROJETO')),
+    ID_Empresa INTEGER NOT NULL,
+    ID_Projeto INTEGER NULL,
+    ID_Usuario_Convidante INTEGER NOT NULL,
+    ID_Usuario_Convidado INTEGER NOT NULL,
+    Nivel_Acesso VARCHAR(30) NOT NULL CHECK (Nivel_Acesso IN ('Administrador', 'Projetista', 'Visualizador')),
+    Status VARCHAR(20) NOT NULL DEFAULT 'PENDENTE' CHECK (Status IN ('PENDENTE', 'ACEITO', 'RECUSADO', 'CANCELADO')),
+    Mensagem TEXT NULL,
+    Data_Criacao TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    Data_Resposta TEXT NULL,
+    FOREIGN KEY (ID_Empresa) REFERENCES Empresa (ID_Empresa) ON DELETE CASCADE,
+    FOREIGN KEY (ID_Projeto) REFERENCES Projeto (ID_Projeto) ON DELETE CASCADE,
+    FOREIGN KEY (ID_Usuario_Convidante) REFERENCES Usuario (ID_Usuario) ON DELETE CASCADE,
+    FOREIGN KEY (ID_Usuario_Convidado) REFERENCES Usuario (ID_Usuario) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_convite_convidado_status ON Convite (ID_Usuario_Convidado, Status);
+CREATE INDEX IF NOT EXISTS idx_convite_empresa_status ON Convite (ID_Empresa, Status);
 """
 
 _SCHEMA_SQLITE_VIEW_SQL = """
@@ -481,6 +511,21 @@ class InfraRouteSQLRepository:
                 'IP_Origem AS "IP_Origem", Detalhes AS "Detalhes" '
                 "FROM Log_Auditoria ORDER BY ID_Evento"
             )
+            participantes_projeto = db.fetch_all(
+                'SELECT ID_Projeto AS "ID_Projeto", ID_Usuario AS "ID_Usuario", '
+                'Papel AS "Papel", Data_Inclusao AS "Data_Inclusao" '
+                "FROM Projeto_Participante ORDER BY ID_Projeto, ID_Usuario"
+            )
+            convites = db.fetch_all(
+                'SELECT ID_Convite AS "ID_Convite", Tipo_Convite AS "Tipo_Convite", '
+                'ID_Empresa AS "ID_Empresa", ID_Projeto AS "ID_Projeto", '
+                'ID_Usuario_Convidante AS "ID_Usuario_Convidante", '
+                'ID_Usuario_Convidado AS "ID_Usuario_Convidado", '
+                'Nivel_Acesso AS "Nivel_Acesso", Status AS "Status", '
+                'Mensagem AS "Mensagem", Data_Criacao AS "Data_Criacao", '
+                'Data_Resposta AS "Data_Resposta" '
+                "FROM Convite ORDER BY ID_Convite ASC"
+            )
 
         return {
             "empresas": empresas,
@@ -492,6 +537,8 @@ class InfraRouteSQLRepository:
             "pontos": pontos,
             "trechos": trechos,
             "auditoria": auditoria,
+            "participantes_projeto": participantes_projeto,
+            "convites": convites,
         }
 
     def inserir_usuario_engenheiro(
@@ -506,9 +553,16 @@ class InfraRouteSQLRepository:
         crea: str,
         id_empresa: int,
         nivel_acesso: str,
+        cnpj_empresa: Optional[str] = None,
+        razao_social_empresa: Optional[str] = None,
     ) -> None:
         email_verif = False if self._db.motor == "postgresql" else 0
         with self._db as db:
+            if cnpj_empresa and razao_social_empresa:
+                db.execute_query(
+                    "INSERT INTO Empresa (ID_Empresa, CNPJ, Razao_Social) VALUES (%s, %s, %s)",
+                    (id_empresa, cnpj_empresa, razao_social_empresa),
+                )
             db.execute_query(
                 "INSERT INTO Usuario (ID_Usuario, Nome, CPF, Telefone, Email, Senha, Email_Verificado) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s)",
@@ -529,6 +583,69 @@ class InfraRouteSQLRepository:
             db.execute_query(
                 "UPDATE Usuario SET Email_Verificado = %s WHERE ID_Usuario = %s",
                 (valor, id_usuario),
+            )
+
+    def inserir_convite(
+        self,
+        *,
+        id_convite: int,
+        tipo_convite: str,
+        id_empresa: int,
+        id_projeto: Optional[int],
+        id_usuario_convidante: int,
+        id_usuario_convidado: int,
+        nivel_acesso: str,
+        status: str,
+        mensagem: Optional[str],
+        data_criacao: str,
+    ) -> None:
+        with self._db as db:
+            db.execute_query(
+                "INSERT INTO Convite (ID_Convite, Tipo_Convite, ID_Empresa, ID_Projeto, "
+                "ID_Usuario_Convidante, ID_Usuario_Convidado, Nivel_Acesso, Status, Mensagem, Data_Criacao) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    id_convite,
+                    tipo_convite,
+                    id_empresa,
+                    id_projeto,
+                    id_usuario_convidante,
+                    id_usuario_convidado,
+                    nivel_acesso,
+                    status,
+                    mensagem,
+                    data_criacao,
+                ),
+            )
+
+    def atualizar_status_convite(
+        self, id_convite: int, status: str, data_resposta: str
+    ) -> None:
+        with self._db as db:
+            db.execute_query(
+                "UPDATE Convite SET Status = %s, Data_Resposta = %s WHERE ID_Convite = %s",
+                (status, data_resposta, id_convite),
+            )
+
+    def inserir_ou_atualizar_vinculo(
+        self, id_usuario: int, id_empresa: int, nivel_acesso: str
+    ) -> None:
+        with self._db as db:
+            db.execute_query(
+                "INSERT INTO Vincula (ID_Usuario, ID_Empresa, Nivel_Acesso) VALUES (%s, %s, %s) "
+                "ON CONFLICT (ID_Usuario, ID_Empresa) DO UPDATE SET Nivel_Acesso = excluded.Nivel_Acesso",
+                (id_usuario, id_empresa, nivel_acesso),
+            )
+
+    def inserir_ou_atualizar_participante_projeto(
+        self, id_projeto: int, id_usuario: int, papel: str, data_inclusao: str
+    ) -> None:
+        with self._db as db:
+            db.execute_query(
+                "INSERT INTO Projeto_Participante (ID_Projeto, ID_Usuario, Papel, Data_Inclusao) "
+                "VALUES (%s, %s, %s, %s) "
+                "ON CONFLICT (ID_Projeto, ID_Usuario) DO UPDATE SET Papel = excluded.Papel, Data_Inclusao = excluded.Data_Inclusao",
+                (id_projeto, id_usuario, papel, data_inclusao),
             )
 
     def inserir_projeto(

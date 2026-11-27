@@ -17,6 +17,7 @@ export const STORAGE_KEYS = {
   CADASTRO_DRAFT: "infraroute:form:cadastro",
   WORKSPACE_CONFIG: "infraroute:config:workspace",
   UI_SIDEBAR_COLLAPSED: "infraroute:ui:sidebar-collapsed",
+  UI_ACTIVE_COMPANY_SCOPE: "infraroute:ui:active-company-scope",
   UI_PROJECTS_PAGE_SIZE: "infraroute:ui:projects-page-size",
   UI_THEME: "infraroute:ui:theme",
 };

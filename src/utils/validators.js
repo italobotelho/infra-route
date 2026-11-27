@@ -78,12 +78,64 @@ export const validarCpf = (cpf) => {
     : "Digite um CPF válido.";
 };
 
-export const formatarCrea = (crea) => crea.replace(/\D/g, "").slice(0, 10);
+export const UFS_BRASIL = [
+  "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO",
+  "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR",
+  "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO",
+];
 
-export const validarCrea = (crea) =>
-  /^\d{1,10}$/.test(crea)
-    ? ""
-    : "Digite um número de CREA válido, com até 10 dígitos.";
+export const formatarCrea = (crea) => {
+  const bruto = String(crea || "")
+    .toUpperCase()
+    .replace(/^CREA[\s-]+/, "")
+    .replace(/[^A-Z0-9/-]/g, "");
+
+  const letrasIniciais = bruto.match(/^[A-Z]{0,2}/)?.[0] || "";
+  const restante = bruto.slice(letrasIniciais.length).replace(/[^0-9/DP]/g, "");
+  const [parteNum = "", ...restoBarra] = restante.split("/");
+  const digitos = parteNum.replace(/\D/g, "").slice(0, 10);
+
+  let sufixo = "";
+  if (restoBarra.length > 0) {
+    const letraSufixo = restoBarra.join("").replace(/[^DP]/g, "").slice(0, 1);
+    sufixo = `/${letraSufixo}`;
+  }
+
+  if (!letrasIniciais) {
+    return `${digitos}${sufixo}`.slice(0, 15);
+  }
+  if (letrasIniciais.length === 2 && (digitos.length > 0 || bruto.includes("-"))) {
+    return `${letrasIniciais}-${digitos}${sufixo}`.slice(0, 15);
+  }
+  return letrasIniciais;
+};
+
+export const validarCrea = (crea) => {
+  const limpo = String(crea || "").trim().toUpperCase().replace(/^CREA[\s-]+/, "");
+  if (!limpo) {
+    return "Informe o registro CREA no formato UF-NUMERO (ex.: SP-5060708090).";
+  }
+
+  const match = limpo.match(/^([A-Z]{2})-(\d+)(?:\/([A-Z]+))?$/);
+  if (!match) {
+    return "Use o formato UF-NUMERO (ex.: SP-5060708090 ou MG-123456/D).";
+  }
+
+  const [, uf, numero, sufixo] = match;
+  if (!UFS_BRASIL.includes(uf)) {
+    return `UF do CREA inválida (${uf}). Utilize uma sigla estadual brasileira válida.`;
+  }
+  if (numero.length < 6 || numero.length > 10) {
+    return "O número do CREA deve conter entre 6 e 10 dígitos.";
+  }
+  if (/^(\d)\1+$/.test(numero)) {
+    return "Número do CREA inválido: sequência de dígitos repetidos.";
+  }
+  if (sufixo && sufixo !== "D" && sufixo !== "P") {
+    return "Sufixo do CREA inválido. Utilize apenas /D ou /P.";
+  }
+  return "";
+};
 
 export const avaliarSenha = (senha) => {
   let pontos = 0;
